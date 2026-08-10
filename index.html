@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyMCE + SignalR</title>
+    <script src="https://cdn.tiny.cloud/1/v12fh0n9gc449zr0k7mx9hh5atv2up7raq0bxpzi20d9ajf1/tinymce/7/tinymce.min.js" referrerpolicy="origin"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+</head>
+<body>
+    <textarea id="editor"></textarea>
+
+    <script>
+        tinymce.init({
+            selector: '#editor',
+            height: 500,
+            menubar: false,
+            branding: false,
+            promotion: false,
+            external_plugins: {
+                'crdtsync': '/crdtsync.js'
+            },
+            plugins: 'crdtsync',
+            crdtsync_hub_url: 'http://localhost:5042/editorHub',
+            crdtsync_doc_id: 'demo'
+        });
+    </script>
+</body>
+</html>

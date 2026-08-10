@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="CrdtCore/CrdtCore.csproj" />
+  <Project Path="CrdtServer/CrdtServer.csproj" Id="ea65b74e-99f7-419a-84a5-07e0b974fe6e" />
+  <Project Path="PlayGroundConsole/PlayGroundConsole.csproj" Id="5d073401-c098-462b-a991-c882b61fd8f6" />
+</Solution>
