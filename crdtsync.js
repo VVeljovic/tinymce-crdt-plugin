@@ -3,119 +3,13 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
     const docId = editor.getParam('crdtsync_doc_id', 'default-doc');
 
     // --- SignalR setup ---
+    // Server-authoritative varijanta: klijent ne drzi nikakvo CRDT stanje (nema
+    // elements niza, nema merge algoritma). Samo javlja "korisnik je otkucao X na
+    // pozidiji N" / "obrisao pozidiju N", i renderuje ono sto server posalje nazad.
     const connection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl)
         .withAutomaticReconnect()
         .build();
-
-    // --- CRDT client-side state (ogledalo CrdtDocument iz CrdtCore) ---
-    let nodeId = null;
-    let counter = 0;
-    let elements = []; // { crdtId: {nodeId, counter}, value, predecessorId, isDeleted }
-
-    function crdtIdEquals(a, b) {
-        if (!a || !b) return a === b;
-        return a.nodeId === b.nodeId && a.counter === b.counter;
-    }
-
-    function hasPriority(existing, incoming) {
-        if (existing.crdtId.nodeId !== incoming.crdtId.nodeId) {
-            return existing.crdtId.nodeId > incoming.crdtId.nodeId;
-        }
-        return existing.crdtId.counter > incoming.crdtId.counter;
-    }
-
-    function findElementIndexById(crdtId) {
-        if (!crdtId) return -1;
-        return elements.findIndex(el => crdtIdEquals(el.crdtId, crdtId));
-    }
-
-    function insertElementInOrder(newElement) {
-        const insertAfterIndex = findElementIndexById(newElement.predecessorId);
-        let candidateIndex = insertAfterIndex + 1;
-
-        const skippedIds = [];
-        if (newElement.predecessorId) skippedIds.push(newElement.predecessorId);
-
-        while (candidateIndex < elements.length) {
-            const candidate = elements[candidateIndex];
-            const partOfChain = candidate.predecessorId
-                && skippedIds.some(id => crdtIdEquals(id, candidate.predecessorId));
-
-            if (!partOfChain) break;
-
-            if (crdtIdEquals(candidate.predecessorId, newElement.predecessorId)
-                && !hasPriority(candidate, newElement)) break;
-
-            skippedIds.push(candidate.crdtId);
-            candidateIndex++;
-        }
-
-        elements.splice(candidateIndex, 0, newElement);
-    }
-
-    function findPredecessorId(visibleIndex) {
-        if (visibleIndex === 0) return null;
-
-        let visibleCount = 0;
-        for (const el of elements) {
-            if (el.isDeleted) continue;
-            visibleCount++;
-            if (visibleIndex === visibleCount) return el.crdtId;
-        }
-
-        for (let i = elements.length - 1; i >= 0; i--) {
-            if (!elements[i].isDeleted) return elements[i].crdtId;
-        }
-        return null;
-    }
-
-    function localInsert(value, visibleIndex) {
-        const predecessorId = findPredecessorId(visibleIndex);
-        const newElement = {
-            crdtId: { nodeId: nodeId, counter: counter++ },
-            value: value,
-            predecessorId: predecessorId,
-            isDeleted: false
-        };
-        insertElementInOrder(newElement);
-        return newElement;
-    }
-
-    function findVisibleElementAt(visibleIndex) {
-        let visibleCount = -1;
-        for (const el of elements) {
-            if (el.isDeleted) continue;
-            visibleCount++;
-            if (visibleCount === visibleIndex) return el;
-        }
-        return null;
-    }
-
-    function localDelete(visibleIndex) {
-        const element = findVisibleElementAt(visibleIndex);
-        if (!element) return null;
-        element.isDeleted = true;
-        return element;
-    }
-
-    function remoteInsert(element) {
-        if (findElementIndexById(element.crdtId) !== -1) return;
-        insertElementInOrder(element);
-    }
-
-    function remoteDelete(crdtId) {
-        const element = elements.find(el => crdtIdEquals(el.crdtId, crdtId));
-        if (element) element.isDeleted = true;
-    }
-
-    function getText() {
-        return elements.filter(el => !el.isDeleted).map(el => el.value).join('');
-    }
-
-    function render() {
-        editor.setContent(getText());
-    }
 
     function getCaretIndex() {
         const rng = editor.selection.getRng();
@@ -125,29 +19,49 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
         return preRange.toString().length;
     }
 
+    // editor.setContent() u potpunosti rekonstruise DOM, pa selection uvek pada na
+    // pocetak - zato pamtimo gde kursor TREBA da bude (po broju karaktera od pocetka)
+    // i vracamo ga rucno posle svakog ContentChanged.
+    let pendingCaretIndex = 0;
+
+    function setCaretIndex(targetIndex) {
+        const body = editor.getBody();
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+
+        let remaining = targetIndex;
+        let node = null;
+        let offset = 0;
+        let current;
+
+        while ((current = walker.nextNode())) {
+            const len = current.nodeValue.length;
+            if (remaining <= len) {
+                node = current;
+                offset = remaining;
+                break;
+            }
+            remaining -= len;
+        }
+
+        if (node) {
+            editor.selection.setCursorLocation(node, offset);
+        } else {
+            // Prazan sadrzaj ili targetIndex van opsega - kursor na kraj.
+            editor.selection.select(body, true);
+            editor.selection.collapse(false);
+        }
+    }
+
     // --- SignalR events ---
-    connection.on("FullSync", (serverElements) => {
-        elements = serverElements;
-        console.log('FullSync primljen, elemenata:', elements.length);
-        render();
-    });
-
-    connection.on("ReceiveInsert", (element) => {
-        remoteInsert(element);
-        console.log('Primljen remote insert:', element);
-        render();
-    });
-
-    connection.on("ReceiveDelete", (crdtId) => {
-        remoteDelete(crdtId);
-        console.log('Primljen remote delete:', crdtId);
-        render();
+    connection.on("ContentChanged", (text) => {
+        console.log('Sadrzaj sa servera:', text);
+        editor.setContent(text);
+        setCaretIndex(pendingCaretIndex);
     });
 
     async function start() {
         await connection.start();
-        nodeId = await connection.invoke('JoinDocument', docId);
-        console.log('Pridruzen dokumentu, dodeljen nodeId:', nodeId);
+        await connection.invoke('JoinDocument', docId);
     }
 
     // --- Editor event handleri ---
@@ -159,10 +73,10 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
         if (e.key.length !== 1) return; // Backspace/Enter/Shift itd. - Enter ide posebno kasnije
 
         const index = getCaretIndex();
-        const element = localInsert(e.key, index);
+        pendingCaretIndex = index + 1; // kursor ide IZA novoubacenog karaktera
 
-        console.log('Lokalni insert:', element);
-        connection.invoke('SendInsert', docId, element)
+        console.log('Slanje insert-a serveru:', e.key, index);
+        connection.invoke('Insert', docId, e.key, index)
             .catch(err => console.error('Greska pri slanju:', err));
     });
 
@@ -175,11 +89,12 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
 
         if (targetIndex < 0) return;
 
-        const deleted = localDelete(targetIndex);
-        if (!deleted) return;
+        // I u Backspace i u Delete slucaju, kursor posle brisanja ostaje na targetIndex
+        // (mesto gde je obrisani karakter bio).
+        pendingCaretIndex = targetIndex;
 
-        console.log('Lokalni delete:', deleted.crdtId);
-        connection.invoke('SendDelete', docId, deleted.crdtId)
+        console.log('Slanje delete-a serveru:', targetIndex);
+        connection.invoke('Delete', docId, targetIndex)
             .catch(err => console.error('Greska pri slanju delete:', err));
     });
 

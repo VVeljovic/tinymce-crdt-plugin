@@ -14,26 +14,31 @@ public class CrdtHub : Hub
 
         var document = _documents.GetOrAdd(docId, _ => new CrdtDocument());
 
-        await Clients.Caller.SendAsync("FullSync", document.Elements);
+        var nodeId = GenerateNodeId();
+        Context.Items["nodeId"] = nodeId;
 
-        return GenerateNodeId();
+        await Clients.Caller.SendAsync("ContentChanged", document.GetText());
+
+        return nodeId;
     }
 
-    public async Task SendInsert(string docId, CrdtElement element)
+    public async Task Insert(string docId, char value, int visibleIndex)
+    {
+        var document = _documents[docId];
+        var nodeId = (int)Context.Items["nodeId"]!;
+
+        document.Insert(nodeId, value, visibleIndex);
+
+        await Clients.Group(docId).SendAsync("ContentChanged", document.GetText());
+    }
+
+    public async Task Delete(string docId, int visibleIndex)
     {
         var document = _documents[docId];
 
-        document.RemoteInsert(element);
+        document.LocalDelete(visibleIndex);
 
-        await Clients.OthersInGroup(docId).SendAsync("ReceiveInsert", element);
-    }
-
-    public async Task SendDelete(string docId, CrdtId elementId)
-    {
-        var document = _documents[docId];
-        document.RemoteDelete(elementId);
-
-        await Clients.OthersInGroup(docId).SendAsync("ReceiveDelete", elementId);
+        await Clients.Group(docId).SendAsync("ContentChanged", document.GetText());
     }
 
     public static int GenerateNodeId() => Interlocked.Increment(ref _nextNodeId);

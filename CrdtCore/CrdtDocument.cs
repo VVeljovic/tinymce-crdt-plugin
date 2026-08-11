@@ -21,9 +21,14 @@
 
         public CrdtElement LocalInsert(char value, int visibleIndex)
         {
+            return Insert(NodeId, value, visibleIndex);
+        }
+
+        public CrdtElement Insert(int nodeId, char value, int visibleIndex)
+        {
             var predecessorId = FindPredecessorId(visibleIndex);
 
-            var newId = new CrdtId(NodeId, Counter++);
+            var newId = new CrdtId(nodeId, Counter++);
 
             var newElement = new CrdtElement
             {
@@ -101,17 +106,6 @@
         }
 
 
-        public void RemoteInsert(CrdtElement crdtElement)
-        {
-            if (Elements.Any(x => x.CrdtId == crdtElement.CrdtId))
-            {
-                return;
-            }
-
-            InsertElementInOrder(crdtElement);
-
-        }
-
         private void InsertElementInOrder(CrdtElement newElement)
         {
             var insertAfterIndex = FindElementIndexById(newElement.PredecessorId);
@@ -167,13 +161,6 @@
             }
 
             return existing.CrdtId.Counter > incoming.CrdtId.Counter;
-        }
-
-        public void RemoteDelete(CrdtId crdtId)
-        {
-            var element = Elements.FirstOrDefault(x => x.CrdtId == crdtId);
-            if (element != null)
-                element.IsDeleted = true;
         }
     }
 }
