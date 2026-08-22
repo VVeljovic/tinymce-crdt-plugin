@@ -2,49 +2,103 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
     const hubUrl = editor.getParam('crdtsync_hub_url', 'http://localhost:5042/editorHub');
     const docId = editor.getParam('crdtsync_doc_id', 'default-doc');
 
-    // --- SignalR setup ---
-    // Server-authoritative varijanta: klijent ne drzi nikakvo CRDT stanje (nema
-    // elements niza, nema merge algoritma). Samo javlja "korisnik je otkucao X na
-    // pozidiji N" / "obrisao pozidiju N", i renderuje ono sto server posalje nazad.
     const connection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl)
         .withAutomaticReconnect()
         .build();
 
-    function getCaretIndex() {
-        const rng = editor.selection.getRng();
-        const preRange = editor.dom.createRng();
-        preRange.setStart(editor.getBody(), 0);
-        preRange.setEnd(rng.startContainer, rng.startOffset);
-        return preRange.toString().length;
+    function isSingleCharMarker(node) {
+        return node.nodeName === 'BR'
+            || (node.nodeName === 'SPAN' && node.classList.contains('crdt-tab'));
     }
 
-    // editor.setContent() u potpunosti rekonstruise DOM, pa selection uvek pada na
-    // pocetak - zato pamtimo gde kursor TREBA da bude (po broju karaktera od pocetka)
-    // i vracamo ga rucno posle svakog ContentChanged.
+    function getCaretIndex() {
+        const rng = editor.selection.getRng();
+        const targetNode = rng.startContainer;
+        const targetOffset = rng.startOffset;
+
+        let count = 0;
+        let found = false;
+
+        function walk(node) {
+            if (found) return;
+
+            if (node === targetNode) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    count += targetOffset;
+                } else {
+                    for (let i = 0; i < targetOffset && i < node.childNodes.length; i++) {
+                        walk(node.childNodes[i]);
+                    }
+                }
+                found = true;
+                return;
+            }
+
+            if (node.nodeType === Node.TEXT_NODE) {
+                count += node.nodeValue.length;
+                return;
+            }
+
+            if (isSingleCharMarker(node)) {
+                count += 1;
+                return;
+            }
+
+            for (const child of node.childNodes) {
+                walk(child);
+                if (found) return;
+            }
+        }
+
+        walk(editor.getBody());
+        return count;
+    }
+
     let pendingCaretIndex = 0;
 
     function setCaretIndex(targetIndex) {
         const body = editor.getBody();
-        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
 
         let remaining = targetIndex;
-        let node = null;
-        let offset = 0;
-        let current;
+        let resultNode = null;
+        let resultOffset = 0;
 
-        while ((current = walker.nextNode())) {
-            const len = current.nodeValue.length;
-            if (remaining <= len) {
-                node = current;
-                offset = remaining;
-                break;
+        function walk(node) {
+            if (resultNode) return;
+
+            if (node.nodeType === Node.TEXT_NODE) {
+                const len = node.nodeValue.length;
+                if (remaining <= len) {
+                    resultNode = node;
+                    resultOffset = remaining;
+                    return;
+                }
+                remaining -= len;
+                return;
             }
-            remaining -= len;
+
+            if (isSingleCharMarker(node)) {
+                if (remaining <= 0) {
+                    // Kursor treba da stoji TACNO ovde - pre ovog markera.
+                    resultNode = node.parentNode;
+                    resultOffset = Array.prototype.indexOf.call(node.parentNode.childNodes, node);
+                    return;
+                }
+                remaining -= 1;
+                return;
+            }
+
+            for (const child of Array.from(node.childNodes)) {
+                walk(child);
+                if (resultNode) return;
+            }
         }
 
-        if (node) {
-            editor.selection.setCursorLocation(node, offset);
+        walk(body);
+
+        if (resultNode) {
+            editor.selection.setCursorLocation(resultNode, resultOffset);
         } else {
             // Prazan sadrzaj ili targetIndex van opsega - kursor na kraj.
             editor.selection.select(body, true);
@@ -52,10 +106,21 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
         }
     }
 
+    function textToHtml(text) {
+        const escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/ /g, '&nbsp;')
+            .replace(/\t/g, '<span class="crdt-tab"></span>');
+
+        return escaped.split('\n').join('<br>');
+    }
+
     // --- SignalR events ---
     connection.on("ContentChanged", (text) => {
         console.log('Sadrzaj sa servera:', text);
-        editor.setContent(text);
+        editor.setContent(textToHtml(text));
         setCaretIndex(pendingCaretIndex);
     });
 
@@ -81,16 +146,37 @@ tinymce.PluginManager.add('crdtsync', function (editor, url) {
     });
 
     editor.on('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+
+            const index = getCaretIndex();
+            pendingCaretIndex = index + 1;
+
+            console.log('Slanje insert-a serveru (Enter):', index);
+            connection.invoke('Insert', docId, '\n', index)
+                .catch(err => console.error('Greska pri slanju:', err));
+            return;
+        }
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+
+            const index = getCaretIndex();
+            pendingCaretIndex = index + 1;
+
+            console.log('Slanje insert-a serveru (Tab):', index);
+            connection.invoke('Insert', docId, '\t', index)
+                .catch(err => console.error('Greska pri slanju:', err));
+            return;
+        }
+
         if (e.key !== 'Backspace' && e.key !== 'Delete') return;
 
         const index = getCaretIndex();
-        // Backspace brise karakter PRE kursora, Delete brise karakter POSLE kursora
         const targetIndex = e.key === 'Backspace' ? index - 1 : index;
 
         if (targetIndex < 0) return;
 
-        // I u Backspace i u Delete slucaju, kursor posle brisanja ostaje na targetIndex
-        // (mesto gde je obrisani karakter bio).
         pendingCaretIndex = targetIndex;
 
         console.log('Slanje delete-a serveru:', targetIndex);
