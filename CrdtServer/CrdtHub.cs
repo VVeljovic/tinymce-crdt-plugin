@@ -41,5 +41,21 @@ public class CrdtHub : Hub
         await Clients.Group(docId).SendAsync("ContentChanged", document.GetText());
     }
 
+    public async Task SendFormatChange(string docId, int visibleIndex, bool isBold, bool isItalic)
+    {
+        var document = _documents[docId];
+        var element = document.FindVisibleElementAt(visibleIndex);
+
+        if (element == null)
+        {
+            return;
+        }
+
+        element.IsBold = isBold;
+        element.IsItalic = isItalic;
+
+        await Clients.Group(docId).SendAsync("ReceiveFormatChange", visibleIndex, isBold, isItalic);
+    }
+
     public static int GenerateNodeId() => Interlocked.Increment(ref _nextNodeId);
 }

@@ -9,5 +9,9 @@
         public CrdtId? PredecessorId { get; set; }
 
         public bool IsDeleted { get; set; }
+
+        public bool IsBold { get; set; }
+
+        public bool IsItalic { get; set; }
     }
 }
