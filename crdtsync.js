@@ -16,6 +16,23 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   let isApplyingRemoteChange = false;
   let lastKnownText = "";
 
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // CRDT dokument je flat niz karaktera -- prelomi reda su obicni '\n'
+  // karakteri u tom nizu. setContent ocekuje HTML, pa sirov '\n' browser
+  // kolabira u razmak. Zato svaki red pretvaramo u svoj <p>.
+  function textToHtml(text) {
+    return text
+      .split(/\n+/)
+      .map((line) => `<p>${line.length ? escapeHtml(line) : "<br>"}</p>`)
+      .join("");
+  }
+
   function diffText(oldText, newText) {
     let start = 0;
     while (
@@ -57,7 +74,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       }
 
       isApplyingRemoteChange = true;
-      editor.setContent(text);
+      editor.setContent(textToHtml(text));
       lastKnownText = text;
       isApplyingRemoteChange = false;
       console.log("[crdtsync] content changed, new content = ", text);

@@ -29,7 +29,7 @@ public class CrdtHub : Hub
 
         document.Insert(nodeId, value, visibleIndex);
 
-        await Clients.Group(docId).SendAsync("ContentChanged", document.GetText());
+        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ContentChanged", document.GetText());
     }
 
     public async Task Delete(string docId, int visibleIndex)
@@ -38,7 +38,7 @@ public class CrdtHub : Hub
 
         document.LocalDelete(visibleIndex);
 
-        await Clients.Group(docId).SendAsync("ContentChanged", document.GetText());
+        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ContentChanged", document.GetText());
     }
 
     public async Task SendFormatChange(string docId, int visibleIndex, bool isBold, bool isItalic)
