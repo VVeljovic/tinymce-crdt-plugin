@@ -11,6 +11,8 @@
     <textarea id="editor"></textarea>
 
     <script>
+        const serverPort = new URLSearchParams(location.search).get('port') || '7160';
+
         tinymce.init({
             selector: '#editor',
             height: 500,
@@ -22,7 +24,7 @@
             },
             plugins: 'crdtsync',
             content_style: 'body { white-space: pre-wrap; } .crdt-tab { display: inline-block; width: 2em; }',
-            crdtsync_hub_url: 'http://localhost:5042/editorHub',
+            crdtsync_hub_url: `https://localhost:${serverPort}/editorHub`,
             crdtsync_doc_id: 'demo'
         });
     </script>

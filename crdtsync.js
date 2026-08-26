@@ -23,9 +23,6 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       .replace(/>/g, "&gt;");
   }
 
-  // CRDT dokument je flat niz karaktera -- prelomi reda su obicni '\n'
-  // karakteri u tom nizu. setContent ocekuje HTML, pa sirov '\n' browser
-  // kolabira u razmak. Zato svaki red pretvaramo u svoj <p>.
   function textToHtml(text) {
     return text
       .split(/\n+/)

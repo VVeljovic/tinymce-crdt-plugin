@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option csharp_namespace = "CrdtServer";
+
+message InsertElementMessage {
+	string docId = 1;
+	string value = 2;
+	int32 visibleIndex = 3;
+}
+
+service CrdtService {
+rpc InsertElement(stream InsertElementMessage) returns (stream InsertElementMessage);
+}

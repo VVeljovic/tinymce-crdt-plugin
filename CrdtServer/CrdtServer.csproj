@@ -7,6 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore.Server" Version="2.83.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.32.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.83.0" />
+    <PackageReference Include="Grpc.Net.ClientFactory" Version="2.83.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.83.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.10" />
   </ItemGroup>
@@ -17,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CrdtCore\CrdtCore.csproj" />
+	<Protobuf Include="protobuf.proto" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>
