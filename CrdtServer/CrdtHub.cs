@@ -40,6 +40,8 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
         document.LocalDelete(visibleIndex);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ContentChanged", document.GetText());
+
+        await peerSyncClient.BroadcastDeleteAsync(docId, visibleIndex);
     }
 
     public static int GenerateNodeId() => Interlocked.Increment(ref _nextNodeId);

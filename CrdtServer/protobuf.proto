@@ -8,6 +8,12 @@ message InsertElementMessage {
 	int32 visibleIndex = 3;
 }
 
+message DeleteElementMessage {
+	string docId = 1;
+	int32 visibleIndex = 2;
+}
+
 service CrdtService {
 rpc InsertElement(stream InsertElementMessage) returns (stream InsertElementMessage);
+rpc DeleteElement(stream DeleteElementMessage) returns (stream DeleteElementMessage);
 }

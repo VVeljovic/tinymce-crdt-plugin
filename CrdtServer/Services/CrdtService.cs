@@ -39,5 +39,23 @@ namespace CrdtServer.Services
                     message.Value, message.VisibleIndex, message.DocId);
             }
         }
+
+        public override async Task DeleteElement(
+            IAsyncStreamReader<DeleteElementMessage> requestStream,
+            IServerStreamWriter<DeleteElementMessage> responseStream,
+            ServerCallContext context)
+        {
+            await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
+            {
+                var document = _store.GetOrCreate(message.DocId);
+                document.LocalDelete(message.VisibleIndex);
+
+                await _hubContext.Clients.Group(message.DocId).SendAsync("ContentChanged", document.GetText());
+
+                _logger.LogInformation(
+                    "Applied peer delete at index {Index} on doc '{DocId}'.",
+                    message.VisibleIndex, message.DocId);
+            }
+        }
     }
 }

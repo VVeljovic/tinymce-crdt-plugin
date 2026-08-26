@@ -5,9 +5,8 @@ namespace CrdtServer
 {
     public class PeerSyncClient
     {
-        // One open duplex stream per peer - opened once here and kept alive for the
-        // lifetime of the server, not re-opened on every insert.
-        private readonly List<AsyncDuplexStreamingCall<InsertElementMessage, InsertElementMessage>> _calls = new();
+        private readonly List<AsyncDuplexStreamingCall<InsertElementMessage, InsertElementMessage>> _insertCalls = new();
+        private readonly List<AsyncDuplexStreamingCall<DeleteElementMessage, DeleteElementMessage>> _deleteCalls = new();
         private readonly ILogger<PeerSyncClient> _logger;
 
         public PeerSyncClient(IConfiguration configuration, ILogger<PeerSyncClient> logger)
@@ -22,7 +21,8 @@ namespace CrdtServer
                 var channel = GrpcChannel.ForAddress(address);
                 var client = new CrdtService.CrdtServiceClient(channel);
 
-                _calls.Add(client.InsertElement());
+                _insertCalls.Add(client.InsertElement());
+                _deleteCalls.Add(client.DeleteElement());
 
                 _logger.LogInformation("Opened outbound gRPC stream to peer '{Address}'.", address);
             }
@@ -30,7 +30,7 @@ namespace CrdtServer
 
         public async Task BroadcastInsertAsync(string docId, char value, int visibleIndex)
         {
-            if (_calls.Count == 0)
+            if (_insertCalls.Count == 0)
             {
                 return;
             }
@@ -42,7 +42,7 @@ namespace CrdtServer
                 VisibleIndex = visibleIndex
             };
 
-            foreach (var call in _calls)
+            foreach (var call in _insertCalls)
             {
                 try
                 {
@@ -51,6 +51,30 @@ namespace CrdtServer
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to forward insert to a peer.");
+                }
+            }
+        }
+
+        public async Task BroadcastDeleteAsync(string docId, int visibleIndex)
+        {
+            if (_deleteCalls.Count == 0)
+            {
+                return;
+            }
+            var message = new DeleteElementMessage
+            {
+                DocId = docId,
+                VisibleIndex = visibleIndex
+            };
+            foreach (var call in _deleteCalls)
+            {
+                try
+                {
+                    await call.RequestStream.WriteAsync(message);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to forward delete to a peer.");
                 }
             }
         }
