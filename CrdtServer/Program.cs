@@ -5,9 +5,6 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// gRPC needs HTTP/2. Kestrel only allows HTTP/2 on a plain "http://" (non-TLS)
-// endpoint if explicitly told to - otherwise it silently stays on HTTP/1.1 and
-// every gRPC call fails.
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.ConfigureEndpointDefaults(listenOptions =>

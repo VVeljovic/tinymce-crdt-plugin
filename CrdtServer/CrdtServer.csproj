@@ -20,10 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Controllers\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\CrdtCore\CrdtCore.csproj" />
 	<Protobuf Include="protobuf.proto" GrpcServices="Both" />
   </ItemGroup>
