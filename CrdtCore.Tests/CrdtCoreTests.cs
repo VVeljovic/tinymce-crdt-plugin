@@ -1,104 +1,128 @@
-﻿namespace CrdtCore.Tests
+namespace CrdtCore.Tests
 {
     public class CrdtCoreTests
     {
+        private static CrdtElement Element(CrdtId id, char value, CrdtId? predecessorId = null) =>
+            new CrdtElement
+            {
+                CrdtId = id,
+                Value = value,
+                PredecessorId = predecessorId,
+                IsDeleted = false
+            };
+
         [Fact]
-        public void Insert_SequentialCharacters_ProducesTextInInsertionOrder()
+        public void RemoteInsert_SequentialCharacters_ProducesTextInInsertionOrder()
         {
             //Arrange
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
             var doc = new CrdtDocument();
 
             //Act
-            doc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
-            doc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
+            doc.RemoteInsert(Element(idA, 'A'));
+            doc.RemoteInsert(Element(idB, 'B', idA));
 
             //Assert
             Assert.Equal("AB", doc.GetText());
         }
 
         [Fact]
-        public void Delete_ExistingElement_RemoveFromVisibleTextButKeepsTombstone()
+        public void RemoteDelete_ExistingElement_RemovesFromVisibleTextButKeepsTombstone()
         {
             //Arrange
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
             var doc = new CrdtDocument();
+            doc.RemoteInsert(Element(idA, 'A'));
+            doc.RemoteInsert(Element(idB, 'B', idA));
 
             //Act
-            doc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
-            doc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
-            doc.Delete(visibleIndex: 1);
+            doc.RemoteDelete(idB);
 
             //Assert
             Assert.Equal("A", doc.GetText());
 
-            var deletedElement = doc.Elements.FirstOrDefault(e => e.Value == 'B');
+            var deletedElement = doc.Elements.Single(e => e.CrdtId == idB);
             Assert.True(deletedElement.IsDeleted);
             Assert.Equal(2, doc.Elements.Count);
         }
 
         [Fact]
-        public void ConcturrentInsertionsFromDifferentNodes_MaintainsCorrectOrder()
+        public void RemoteInsert_ConcurrentInsertsAtSamePosition_ConvergeRegardlessOfOrder()
         {
             //Arrange
-            var firstDoc = new CrdtDocument();
-            firstDoc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
+            var idC = new CrdtId(2, 2);
 
-            var secondDoc = new CrdtDocument();
-            secondDoc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
+            var docBFirst = new CrdtDocument();
+            var docCFirst = new CrdtDocument();
 
             //Act
-            firstDoc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
-            firstDoc.Insert(nodeId: 2, value: 'C', visibleIndex: 1);
+            docBFirst.RemoteInsert(Element(idA, 'A'));
+            docBFirst.RemoteInsert(Element(idB, 'B', idA));
+            docBFirst.RemoteInsert(Element(idC, 'C', idA));
 
-            secondDoc.Insert(nodeId: 2, value: 'C', visibleIndex: 1);
-            secondDoc.Insert(nodeId: 1, value: 'B', visibleIndex: 2);
+            docCFirst.RemoteInsert(Element(idA, 'A'));
+            docCFirst.RemoteInsert(Element(idC, 'C', idA));
+            docCFirst.RemoteInsert(Element(idB, 'B', idA));
 
             //Assert
-            Assert.Equal(firstDoc.GetText(), secondDoc.GetText());
+            Assert.Equal(docBFirst.GetText(), docCFirst.GetText());
         }
 
         [Fact]
-        public void ConcurrentInsertsAtDocumentStart_ConvergeRegardlessOfOrder()
+        public void RemoteInsert_ConcurrentInsertsAtDocumentStart_ConvergeRegardlessOfOrder()
         {
             //Arrange
-            var docAppliedBFirst = new CrdtDocument();
-            var docAppliedAFirst = new CrdtDocument();
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(2, 1);
+
+            var docBFirst = new CrdtDocument();
+            var docAFirst = new CrdtDocument();
 
             //Act
-            docAppliedBFirst.Insert(nodeId: 2, value: 'B', visibleIndex: 0);
-            docAppliedBFirst.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
+            docBFirst.RemoteInsert(Element(idB, 'B'));
+            docBFirst.RemoteInsert(Element(idA, 'A'));
 
-            docAppliedAFirst.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
-            docAppliedAFirst.Insert(nodeId: 2, value: 'B', visibleIndex: 0);
+            docAFirst.RemoteInsert(Element(idA, 'A'));
+            docAFirst.RemoteInsert(Element(idB, 'B'));
 
             //Assert
-            Assert.Equal(docAppliedBFirst.GetText(), docAppliedAFirst.GetText());
+            Assert.Equal(docBFirst.GetText(), docAFirst.GetText());
         }
 
         [Fact]
-        public void DifferentInsertionOrdersFromMultipleNodes_ShouldConvergeToSameState()
+        public void RemoteInsert_DifferentInsertionOrdersFromMultipleNodes_ConvergeToSameState()
         {
             //Arrange
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
+            var idC = new CrdtId(2, 2);
+            var idD = new CrdtId(3, 3);
+
             var firstDoc = new CrdtDocument();
-            firstDoc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
+            firstDoc.RemoteInsert(Element(idA, 'A'));
 
             var secondDoc = new CrdtDocument();
-            secondDoc.Insert(nodeId: 2, value: 'A', visibleIndex: 0);
+            secondDoc.RemoteInsert(Element(idA, 'A'));
 
             var thirdDoc = new CrdtDocument();
-            thirdDoc.Insert(nodeId: 3, value: 'A', visibleIndex: 0);
+            thirdDoc.RemoteInsert(Element(idA, 'A'));
 
             //Act
-            firstDoc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
-            firstDoc.Insert(nodeId: 2, value: 'C', visibleIndex: 1);
-            firstDoc.Insert(nodeId: 3, value: 'D', visibleIndex: 1);
+            firstDoc.RemoteInsert(Element(idB, 'B', idA));
+            firstDoc.RemoteInsert(Element(idC, 'C', idA));
+            firstDoc.RemoteInsert(Element(idD, 'D', idA));
 
-            secondDoc.Insert(nodeId: 2, value: 'C', visibleIndex: 1);
-            secondDoc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
-            secondDoc.Insert(nodeId: 3, value: 'D', visibleIndex: 1);
+            secondDoc.RemoteInsert(Element(idC, 'C', idA));
+            secondDoc.RemoteInsert(Element(idB, 'B', idA));
+            secondDoc.RemoteInsert(Element(idD, 'D', idA));
 
-            thirdDoc.Insert(nodeId: 3, value: 'D', visibleIndex: 1);
-            thirdDoc.Insert(nodeId: 2, value: 'C', visibleIndex: 1);
-            thirdDoc.Insert(nodeId: 1, value: 'B', visibleIndex: 1);
+            thirdDoc.RemoteInsert(Element(idD, 'D', idA));
+            thirdDoc.RemoteInsert(Element(idC, 'C', idA));
+            thirdDoc.RemoteInsert(Element(idB, 'B', idA));
 
             //Assert
             Assert.Equal(firstDoc.GetText(), secondDoc.GetText());
@@ -107,28 +131,29 @@
         }
 
         [Fact]
-        public void Delete_NonExistentElement_ShouldNotThrowException()
+        public void RemoteDelete_NonExistentElement_ShouldNotThrowException()
         {
             //Arrange
             var doc = new CrdtDocument();
 
             //Act
-            var exception = Record.Exception(() => doc.Delete(visibleIndex: 0));
+            var exception = Record.Exception(() => doc.RemoteDelete(new CrdtId(1, 0)));
 
             //Assert
             Assert.Null(exception);
         }
 
         [Fact]
-        public void Delete_AlreadyDeletedElement_ShouldNotThrowException()
+        public void RemoteDelete_AlreadyDeletedElement_ShouldNotThrowException()
         {
             //Arrange
+            var idA = new CrdtId(1, 0);
             var doc = new CrdtDocument();
-            doc.Insert(nodeId: 1, value: 'A', visibleIndex: 0);
-            doc.Delete(visibleIndex: 0);
+            doc.RemoteInsert(Element(idA, 'A'));
+            doc.RemoteDelete(idA);
 
             //Act
-            var exception = Record.Exception(() => doc.Delete(visibleIndex: 0));
+            var exception = Record.Exception(() => doc.RemoteDelete(idA));
 
             //Assert
             Assert.Null(exception);

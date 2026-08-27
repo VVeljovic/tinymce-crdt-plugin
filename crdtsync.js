@@ -11,10 +11,63 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   const hubUrl = editor.options.get("crdtsync_hub_url");
   const docId = editor.options.get("crdtsync_doc_id");
 
-  let nodeId = null;
   let connection = null;
   let isApplyingRemoteChange = false;
-  let lastKnownText = "";
+
+  const myNodeId = getOrCreateNodeId();
+  let myCounter = 0;
+  let localElements = [];
+
+  function getOrCreateNodeId() {
+    let id = localStorage.getItem("crdtsync_node_id");
+    if (!id) {
+      id = Math.floor(Math.random() * 1000000);
+      localStorage.setItem("crdtsync_node_id", id);
+    }
+
+    return parseInt(id, 10);
+  }
+
+  function findPredecessorId(visibleIndex) {
+    if (visibleIndex === 0) {
+      return null;
+    }
+
+    let visibleCount = 0;
+    for (const el of localElements) {
+      if (el.isDeleted) {
+        continue;
+      }
+      visibleCount++;
+      if (visibleCount === visibleIndex) {
+        return el.crdtId;
+      }
+    }
+
+    const last = [...localElements].reverse().find((e) => !e.isDeleted);
+    return last ? last.crdtId : null;
+  }
+
+  function findVisibleElementAt(visibleIndex) {
+    let visibleCount = -1;
+    for (const el of localElements) {
+      if (el.isDeleted) continue;
+      visibleCount++;
+      if (visibleCount === visibleIndex) return el;
+    }
+    return null;
+  }
+
+  function idsEqual(a, b) {
+    return a && b && a.nodeId === b.nodeId && a.counter === b.counter;
+  }
+
+  function renderText() {
+    return localElements
+      .filter((e) => !e.isDeleted)
+      .map((e) => e.value)
+      .join("");
+  }
 
   function escapeHtml(str) {
     return str
@@ -65,53 +118,65 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       .withAutomaticReconnect()
       .build();
 
-    connection.on("ContentChanged", (text) => {
-      if (text === lastKnownText) {
-        return;
-      }
-
+    connection.on("ElementsChanged", (elements) => {
+      localElements = elements;
       isApplyingRemoteChange = true;
-      editor.setContent(textToHtml(text));
-      lastKnownText = text;
+      editor.setContent(textToHtml(renderText()));
       isApplyingRemoteChange = false;
-      console.log("[crdtsync] content changed, new content = ", text);
     });
 
     connection
       .start()
       .then(() => connection.invoke("JoinDocument", docId))
-      .then((assignedNodeId) => {
-        nodeId = assignedNodeId;
-        console.log("[crdtsync] was connected, nodeId = ", nodeId);
+      .then(() => {
+        console.log("[crdtsync] was connected, myNodeId = ", myNodeId);
       })
       .catch((err) => console.error("[crdtsync] error during connection", err));
   });
-editor.on("keydown", (e) => {
+  editor.on("keydown", (e) => {
     if (e.key === "Enter") {
-        e.preventDefault();
-        editor.execCommand("InsertParagraph");
-    }  if (e.key === "Tab") {
-        e.preventDefault();
-        editor.insertContent("&nbsp;&nbsp;&nbsp;&nbsp;");
+      e.preventDefault();
+      editor.execCommand("InsertParagraph");
     }
-});
+    if (e.key === "Tab") {
+      e.preventDefault();
+      editor.insertContent("&nbsp;&nbsp;&nbsp;&nbsp;");
+    }
+  });
 
   editor.on("input", () => {
-    const newText = editor.getContent({ format: "text" });
     if (isApplyingRemoteChange) {
       return;
     }
-    const { start, deleted, inserted } = diffText(lastKnownText, newText);
 
-    for (let i = 0; i < deleted.length; i++) {
-      connection.invoke("Delete", docId, start);
+    const newText = editor.getContent({format: "text"});
+    const oldText = renderText();
+
+    const {start, deleted, inserted} = diffText(oldText, newText);
+
+    for(let i = 0; i < deleted.length; i++)
+    {
+      const el = findVisibleElementAt(start);
+      if(!el) continue;
+      el.isDeleted = true;
+      connection.invoke("Delete", el.crdtId, docId);
     }
+      for (let i = 0; i < inserted.length; i++) {
+    const predecessorId = findPredecessorId(start + i);
+    const newElement = {
+      crdtId: { nodeId: myNodeId, counter: myCounter++ },
+      value: inserted[i],
+      predecessorId,
+      isDeleted: false,
+    };
 
-    for (let i = 0; i < inserted.length; i++) {
-      connection.invoke("Insert", docId, inserted[i], start + i);
+    const insertAt = predecessorId
+      ? localElements.findIndex((e) => idsEqual(e.crdtId, predecessorId)) + 1
+      : 0;
+    localElements.splice(insertAt, 0, newElement);
+
+    connection.invoke("Insert", newElement, docId);
     }
-
-    lastKnownText = newText;
   });
 
   return {

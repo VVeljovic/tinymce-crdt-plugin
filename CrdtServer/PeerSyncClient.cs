@@ -1,3 +1,4 @@
+using CrdtCore;
 using Grpc.Core;
 using Grpc.Net.Client;
 
@@ -5,8 +6,8 @@ namespace CrdtServer
 {
     public class PeerSyncClient
     {
-        private readonly List<AsyncDuplexStreamingCall<InsertElementMessage, InsertElementMessage>> _insertCalls = new();
-        private readonly List<AsyncDuplexStreamingCall<DeleteElementMessage, DeleteElementMessage>> _deleteCalls = new();
+        private readonly List<AsyncDuplexStreamingCall<InsertOperationMessage, InsertOperationMessage>> _insertCalls = new();
+        private readonly List<AsyncDuplexStreamingCall<DeleteOperationMessage, DeleteOperationMessage>> _deleteCalls = new();
         private readonly ILogger<PeerSyncClient> _logger;
 
         public PeerSyncClient(IConfiguration configuration, ILogger<PeerSyncClient> logger)
@@ -21,25 +22,24 @@ namespace CrdtServer
                 var channel = GrpcChannel.ForAddress(address);
                 var client = new CrdtService.CrdtServiceClient(channel);
 
-                _insertCalls.Add(client.InsertElement());
-                _deleteCalls.Add(client.DeleteElement());
+                _insertCalls.Add(client.InsertOperation());
+                _deleteCalls.Add(client.DeleteOperation());
 
                 _logger.LogInformation("Opened outbound gRPC stream to peer '{Address}'.", address);
             }
         }
 
-        public async Task BroadcastInsertAsync(string docId, char value, int visibleIndex)
+        public async Task BroadcastInsertAsync(CrdtElement crdtElement, string docId)
         {
             if (_insertCalls.Count == 0)
             {
                 return;
             }
 
-            var message = new InsertElementMessage
+            var message = new InsertOperationMessage
             {
+                Element = crdtElement,
                 DocId = docId,
-                Value = value.ToString(),
-                VisibleIndex = visibleIndex
             };
 
             foreach (var call in _insertCalls)
@@ -55,16 +55,16 @@ namespace CrdtServer
             }
         }
 
-        public async Task BroadcastDeleteAsync(string docId, int visibleIndex)
+        public async Task BroadcastDeleteAsync(CrdtId elementId, string docId)
         {
             if (_deleteCalls.Count == 0)
             {
                 return;
             }
-            var message = new DeleteElementMessage
+            var message = new DeleteOperationMessage
             {
+                ElementId = elementId,
                 DocId = docId,
-                VisibleIndex = visibleIndex
             };
             foreach (var call in _deleteCalls)
             {

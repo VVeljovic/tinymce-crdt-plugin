@@ -17,7 +17,6 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<CrdtDocumentStore>();
@@ -44,7 +43,6 @@ app.MapHub<CrdtHub>("/editorHub");
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();

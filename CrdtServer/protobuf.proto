@@ -2,18 +2,33 @@ syntax = "proto3";
 
 option csharp_namespace = "CrdtServer";
 
-message InsertElementMessage {
-	string docId = 1;
-	string value = 2;
-	int32 visibleIndex = 3;
+
+message CrdtId {
+int32 nodeId = 1;
+int64 counter = 2;
 }
 
-message DeleteElementMessage {
+message CrdtElement {
+CrdtId id = 1;
+string value = 2;
+CrdtId predecessorId = 3;
+bool isDeleted = 4;
+}
+
+message InsertOperationMessage {
 	string docId = 1;
-	int32 visibleIndex = 2;
+	CrdtElement element = 2;
+}
+
+message DeleteOperationMessage {
+	string docId = 1;
+	CrdtId elementId = 2;
 }
 
 service CrdtService {
-rpc InsertElement(stream InsertElementMessage) returns (stream InsertElementMessage);
-rpc DeleteElement(stream DeleteElementMessage) returns (stream DeleteElementMessage);
+rpc DeleteOperation(stream DeleteOperationMessage) returns (stream DeleteOperationMessage);
+rpc InsertOperation(stream InsertOperationMessage) returns (stream InsertOperationMessage);
 }
+
+
+

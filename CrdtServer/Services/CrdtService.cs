@@ -16,46 +16,54 @@ namespace CrdtServer.Services
             _hubContext = hubContext;
         }
 
-        public override async Task InsertElement(
-            IAsyncStreamReader<InsertElementMessage> requestStream,
-            IServerStreamWriter<InsertElementMessage> responseStream,
+        public override async Task InsertOperation(IAsyncStreamReader<InsertOperationMessage> requestStream,
+            IServerStreamWriter<InsertOperationMessage> responseStream,
             ServerCallContext context)
         {
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
-                if (string.IsNullOrEmpty(message.Value))
+                if (string.IsNullOrEmpty(message.Element.Value))
                 {
                     _logger.LogWarning("Ignored InsertElement with empty value for doc '{DocId}'.", message.DocId);
                     continue;
                 }
 
                 var document = _store.GetOrCreate(message.DocId);
-                document.Insert(document.NodeId, message.Value[0], message.VisibleIndex);
+                document.RemoteInsert(ToDomainElement(message.Element));
 
-                await _hubContext.Clients.Group(message.DocId).SendAsync("ContentChanged", document.GetText());
+                await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 
                 _logger.LogInformation(
                     "Applied peer insert '{Value}' at index {Index} on doc '{DocId}'.",
-                    message.Value, message.VisibleIndex, message.DocId);
+                    message.Element.Value, message.Element.Id, message.DocId);
             }
         }
 
-        public override async Task DeleteElement(
-            IAsyncStreamReader<DeleteElementMessage> requestStream,
-            IServerStreamWriter<DeleteElementMessage> responseStream,
+        public override async Task DeleteOperation(IAsyncStreamReader<DeleteOperationMessage> requestStream,
+            IServerStreamWriter<DeleteOperationMessage> responseStream,
             ServerCallContext context)
         {
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
                 var document = _store.GetOrCreate(message.DocId);
-                document.Delete(message.VisibleIndex);
+                document.RemoteDelete(ToDomainId(message.ElementId));
 
-                await _hubContext.Clients.Group(message.DocId).SendAsync("ContentChanged", document.GetText());
+                await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 
                 _logger.LogInformation(
                     "Applied peer delete at index {Index} on doc '{DocId}'.",
-                    message.VisibleIndex, message.DocId);
+                    message.ElementId, message.DocId);
             }
         }
+
+        private static CrdtCore.CrdtId ToDomainId(CrdtId protoId) => new(protoId.NodeId, protoId.Counter);
+
+        private static CrdtCore.CrdtElement ToDomainElement(CrdtElement protoElement) => new CrdtCore.CrdtElement
+        {
+            CrdtId = ToDomainId(protoElement.Id),
+            Value = protoElement.Value[0],
+            PredecessorId = protoElement.PredecessorId != null ? ToDomainId(protoElement.PredecessorId) : null,
+            IsDeleted = protoElement.IsDeleted
+        };
     }
 }
