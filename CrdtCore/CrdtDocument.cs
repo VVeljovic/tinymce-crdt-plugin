@@ -70,7 +70,7 @@
             return Elements.LastOrDefault(x => !x.IsDeleted)?.CrdtId;
         }
 
-        public CrdtElement LocalDelete(int visibleIndex)
+        public CrdtElement Delete(int visibleIndex)
         {
             var elementToDelete = FindVisibleElementAt(visibleIndex);
 
@@ -111,16 +111,13 @@
             var insertAfterIndex = FindElementIndexById(newElement.PredecessorId);
             var candidateIndex = insertAfterIndex + 1;
 
-            var skippedIds = new HashSet<CrdtId>();
-            if (newElement.PredecessorId != null)
-                skippedIds.Add(newElement.PredecessorId);
+            var skippedIds = new HashSet<CrdtId?> { newElement.PredecessorId };
 
             while (candidateIndex < Elements.Count)
             {
                 var candidate = Elements[candidateIndex];
 
-                bool partOfChain = candidate.PredecessorId != null
-                    && skippedIds.Contains(candidate.PredecessorId);
+                bool partOfChain = skippedIds.Contains(candidate.PredecessorId);
 
                 if (!partOfChain)
                     break;

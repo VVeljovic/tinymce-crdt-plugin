@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="CrdtCore.Tests/CrdtCore.Tests.csproj" Id="202fce92-1066-42bf-bf3f-2b60122a0b4e" />
   <Project Path="CrdtCore/CrdtCore.csproj" />
   <Project Path="CrdtServer/CrdtServer.csproj" Id="ea65b74e-99f7-419a-84a5-07e0b974fe6e" />
 </Solution>

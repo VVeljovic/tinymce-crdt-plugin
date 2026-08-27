@@ -48,7 +48,7 @@ namespace CrdtServer.Services
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
                 var document = _store.GetOrCreate(message.DocId);
-                document.LocalDelete(message.VisibleIndex);
+                document.Delete(message.VisibleIndex);
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ContentChanged", document.GetText());
 

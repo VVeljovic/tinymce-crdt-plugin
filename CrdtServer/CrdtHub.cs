@@ -37,7 +37,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
     {
         var document = store.GetOrCreate(docId);
 
-        document.LocalDelete(visibleIndex);
+        document.Delete(visibleIndex);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ContentChanged", document.GetText());
 
