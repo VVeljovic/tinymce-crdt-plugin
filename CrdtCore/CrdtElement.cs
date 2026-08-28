@@ -8,6 +8,8 @@
 
         public CrdtId? PredecessorId { get; set; }
 
+        public CrdtId?  SuccessorId { get; set; }
+
         public bool IsDeleted { get; set; }
     }
 }

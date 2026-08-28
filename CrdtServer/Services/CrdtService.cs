@@ -63,6 +63,7 @@ namespace CrdtServer.Services
             CrdtId = ToDomainId(protoElement.Id),
             Value = protoElement.Value[0],
             PredecessorId = protoElement.PredecessorId != null ? ToDomainId(protoElement.PredecessorId) : null,
+            SuccessorId = protoElement.SuccessorId != null ? ToDomainId(protoElement.SuccessorId) : null,
             IsDeleted = protoElement.IsDeleted
         };
     }

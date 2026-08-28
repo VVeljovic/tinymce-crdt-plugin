@@ -163,10 +163,13 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     }
       for (let i = 0; i < inserted.length; i++) {
     const predecessorId = findPredecessorId(start + i);
+    const successorElement = findVisibleElementAt(start+i);
+    const successorId = successorElement ? successorElement.crdtId : null;
     const newElement = {
       crdtId: { nodeId: myNodeId, counter: myCounter++ },
       value: inserted[i],
       predecessorId,
+      successorId,
       isDeleted: false,
     };
 

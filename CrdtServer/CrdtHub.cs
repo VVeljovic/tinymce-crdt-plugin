@@ -4,8 +4,6 @@ using Microsoft.AspNetCore.SignalR;
 
 public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : Hub
 {
-    private static int _nextNodeId = 1;
-
     public async Task JoinDocument(string docId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, docId);
@@ -46,6 +44,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
             Id = ToWireId(element.CrdtId),
             Value = element.Value.ToString(),
             PredecessorId = element.PredecessorId != null ? ToWireId(element.PredecessorId) : null,
+            SuccessorId = element.SuccessorId != null ? ToWireId(element.SuccessorId) : null,
             IsDeleted = element.IsDeleted
         };
 }

@@ -12,19 +12,22 @@
             var insertAfterIndex = FindElementIndexById(newElement.PredecessorId);
             var candidateIndex = insertAfterIndex + 1;
 
+            var successorIndex = FindElementIndexById(newElement.SuccessorId);
+            var boundIndex = newElement.SuccessorId != null && successorIndex >= 0 ? successorIndex : Elements.Count;
+
             var skippedIds = new HashSet<CrdtId?> { newElement.PredecessorId };
 
-            while (candidateIndex < Elements.Count)
+            while (candidateIndex < boundIndex)
             {
                 var candidate = Elements[candidateIndex];
 
-                bool partOfChain = skippedIds.Contains(candidate.PredecessorId);
+                bool partOfConflicts = skippedIds.Contains(candidate.PredecessorId);
 
-                if (!partOfChain)
+                if (!partOfConflicts)
                     break;
 
                 if (candidate.PredecessorId == newElement.PredecessorId
-                    && !HasPriority(candidate, newElement))
+                    && !HasPriority(candidate, newElement)) // exit when new element has priority
                     break;
 
                 skippedIds.Add(candidate.CrdtId);
@@ -52,15 +55,7 @@
             return -1;
         }
 
-        private bool HasPriority(CrdtElement existing, CrdtElement incoming)
-        {
-            if (existing.CrdtId.NodeId > incoming.CrdtId.NodeId)
-            {
-                return true;
-            }
-
-            return existing.CrdtId.Counter > incoming.CrdtId.Counter;
-        }
+        private bool HasPriority(CrdtElement existing, CrdtElement incoming) => existing.CrdtId.CompareTo(incoming.CrdtId) > 0;
 
         public CrdtElement RemoteInsert(CrdtElement crdtElement)
         {

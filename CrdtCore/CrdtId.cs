@@ -5,10 +5,10 @@
         public int CompareTo(CrdtId? other)
         {
             if (other is null) return 1;
-            int nodeComparison = NodeId.CompareTo(other.NodeId);
-            if (nodeComparison != 0)
-                return nodeComparison;
-            return Counter.CompareTo(other.Counter);
+            int counterComparison = Counter.CompareTo(other.Counter);
+            if (counterComparison != 0)
+                return counterComparison;
+            return NodeId.CompareTo(other.NodeId);
         }
     }
 }

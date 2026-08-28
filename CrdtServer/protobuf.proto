@@ -12,7 +12,8 @@ message CrdtElement {
 CrdtId id = 1;
 string value = 2;
 CrdtId predecessorId = 3;
-bool isDeleted = 4;
+CrdtId successorId = 4;
+bool isDeleted = 5;
 }
 
 message InsertOperationMessage {
