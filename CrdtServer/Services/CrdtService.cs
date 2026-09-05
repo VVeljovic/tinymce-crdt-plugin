@@ -29,7 +29,7 @@ namespace CrdtServer.Services
                 }
 
                 var document = _store.GetOrCreate(message.DocId);
-                document.RemoteInsert(ToDomainElement(message.Element));
+                document.Insert(ToDomainElement(message.Element));
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 
@@ -46,7 +46,7 @@ namespace CrdtServer.Services
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
                 var document = _store.GetOrCreate(message.DocId);
-                document.RemoteDelete(ToDomainId(message.ElementId));
+                document.Delete(ToDomainId(message.ElementId));
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 

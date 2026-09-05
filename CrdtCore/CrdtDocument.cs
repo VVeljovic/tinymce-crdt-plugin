@@ -4,8 +4,31 @@
     {
         public List<CrdtElement> Elements { get; set; } = [];
 
-        public int Counter { get; set; }
         public CrdtDocument() { }
+
+        private int FindElementIndexById(CrdtId? crdtId)
+        {
+            if (crdtId == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < Elements.Count; i++)
+            {
+                if (Elements[i].CrdtId == crdtId)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        public CrdtElement Insert(CrdtElement crdtElement)
+        {
+            InsertElementInOrder(crdtElement);
+
+            return crdtElement;
+        }
 
         private void InsertElementInOrder(CrdtElement newElement)
         {
@@ -27,7 +50,7 @@
                     break;
 
                 if (candidate.PredecessorId == newElement.PredecessorId
-                    && !HasPriority(candidate, newElement)) // exit when new element has priority
+                    && candidate.CrdtId.CompareTo(newElement.CrdtId) <= 0) // exit when new element has priority
                     break;
 
                 skippedIds.Add(candidate.CrdtId);
@@ -38,33 +61,7 @@
         }
 
 
-        private int FindElementIndexById(CrdtId? crdtId)
-        {
-            if (crdtId == null)
-            {
-                return -1;
-            }
-
-            for (int i = 0; i < Elements.Count; i++)
-            {
-                if (Elements[i].CrdtId == crdtId)
-                {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        private bool HasPriority(CrdtElement existing, CrdtElement incoming) => existing.CrdtId.CompareTo(incoming.CrdtId) > 0;
-
-        public CrdtElement RemoteInsert(CrdtElement crdtElement)
-        {
-            InsertElementInOrder(crdtElement);
-
-            return crdtElement;
-        }
-
-        public CrdtElement? RemoteDelete(CrdtId targetId)
+        public CrdtElement? Delete(CrdtId targetId)
         {
             var elementToDelete = Elements.FirstOrDefault(e => e.CrdtId == targetId);
 
@@ -79,5 +76,6 @@
         }
 
         public string GetText() => string.Join("", Elements.Where(x => !x.IsDeleted).Select(x => x.Value));
+
     }
 }

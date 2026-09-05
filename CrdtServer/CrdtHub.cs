@@ -17,7 +17,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
     {
         var document = store.GetOrCreate(docId);
 
-        document.RemoteInsert(crdtElement);
+        document.Insert(crdtElement);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
@@ -28,7 +28,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
     {
         var document = store.GetOrCreate(docId);
 
-        document.RemoteDelete(crdtId);
+        document.Delete(crdtId);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
