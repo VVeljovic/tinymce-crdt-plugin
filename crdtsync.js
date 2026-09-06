@@ -7,16 +7,8 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     processor: "string",
     default: "default",
   });
-
   const hubUrl = editor.options.get("crdtsync_hub_url");
   const docId = editor.options.get("crdtsync_doc_id");
-
-  let connection = null;
-  let isApplyingRemoteChange = false;
-
-  const myNodeId = getOrCreateNodeId();
-  let myCounter = 0;
-  let localElements = [];
 
   function getOrCreateNodeId() {
     let id = localStorage.getItem("crdtsync_node_id");
@@ -27,6 +19,13 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
 
     return parseInt(id, 10);
   }
+
+  let connection = null;
+  let isApplyingRemoteChange = false;
+
+  const myNodeId = getOrCreateNodeId();
+  let myCounter = 0;
+  let localElements = [];
 
   function findPredecessorId(visibleIndex) {
     if (visibleIndex === 0) {
@@ -113,6 +112,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   }
 
   editor.on("init", () => {
+    
     connection = new signalR.HubConnectionBuilder()
       .withUrl(hubUrl)
       .withAutomaticReconnect()
@@ -133,6 +133,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       })
       .catch((err) => console.error("[crdtsync] error during connection", err));
   });
+
   editor.on("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -149,36 +150,36 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       return;
     }
 
-    const newText = editor.getContent({format: "text"});
+    const newText = editor.getContent({ format: "text" });
     const oldText = renderText();
 
-    const {start, deleted, inserted} = diffText(oldText, newText);
+    const { start, deleted, inserted } = diffText(oldText, newText);
 
-    for(let i = 0; i < deleted.length; i++)
-    {
+    for (let i = 0; i < deleted.length; i++) {
       const el = findVisibleElementAt(start);
-      if(!el) continue;
+      if (!el) continue;
       el.isDeleted = true;
       connection.invoke("Delete", el.crdtId, docId);
     }
-      for (let i = 0; i < inserted.length; i++) {
-    const predecessorId = findPredecessorId(start + i);
-    const successorElement = findVisibleElementAt(start+i);
-    const successorId = successorElement ? successorElement.crdtId : null;
-    const newElement = {
-      crdtId: { nodeId: myNodeId, counter: myCounter++ },
-      value: inserted[i],
-      predecessorId,
-      successorId,
-      isDeleted: false,
-    };
 
-    const insertAt = predecessorId
-      ? localElements.findIndex((e) => idsEqual(e.crdtId, predecessorId)) + 1
-      : 0;
-    localElements.splice(insertAt, 0, newElement);
+    for (let i = 0; i < inserted.length; i++) {
+      const predecessorId = findPredecessorId(start + i);
+      const successorElement = findVisibleElementAt(start + i);
+      const successorId = successorElement ? successorElement.crdtId : null;
+      const newElement = {
+        crdtId: { nodeId: myNodeId, counter: myCounter++ },
+        value: inserted[i],
+        predecessorId,
+        successorId,
+        isDeleted: false,
+      };
 
-    connection.invoke("Insert", newElement, docId);
+      const insertAt = predecessorId
+        ? localElements.findIndex((e) => idsEqual(e.crdtId, predecessorId)) + 1
+        : 0;
+      localElements.splice(insertAt, 0, newElement);
+
+      connection.invoke("Insert", newElement, docId);
     }
   });
 
