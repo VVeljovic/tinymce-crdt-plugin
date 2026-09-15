@@ -8,6 +8,7 @@ namespace CrdtServer
     {
         private readonly List<AsyncDuplexStreamingCall<InsertOperationMessage, InsertOperationMessage>> _insertCalls = new();
         private readonly List<AsyncDuplexStreamingCall<DeleteOperationMessage, DeleteOperationMessage>> _deleteCalls = new();
+        private readonly List<AsyncDuplexStreamingCall<FormatOperationMessage, FormatOperationMessage>> _formatCalls = new();
         private readonly ILogger<PeerSyncClient> _logger;
 
         public PeerSyncClient(IConfiguration configuration, ILogger<PeerSyncClient> logger)
@@ -24,6 +25,7 @@ namespace CrdtServer
 
                 _insertCalls.Add(client.InsertOperation());
                 _deleteCalls.Add(client.DeleteOperation());
+                _formatCalls.Add(client.FormatOperation());
 
                 _logger.LogInformation("Opened outbound gRPC stream to peer '{Address}'.", address);
             }
@@ -75,6 +77,32 @@ namespace CrdtServer
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to forward delete to a peer.");
+                }
+            }
+        }
+
+        public async Task BroadcastFormatAsync(CrdtFormatting formatting, string docId)
+        {
+            if (_formatCalls.Count == 0)
+            {
+                return;
+            }
+
+            var message = new FormatOperationMessage
+            {
+                Formatting = formatting,
+                DocId = docId,
+            };
+
+            foreach (var call in _formatCalls)
+            {
+                try
+                {
+                    await call.RequestStream.WriteAsync(message);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to forward formatting to a peer.");
                 }
             }
         }

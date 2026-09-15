@@ -158,5 +158,120 @@ namespace CrdtCore.Tests
             //Assert
             Assert.Null(exception);
         }
+
+        private static Dictionary<string, string> EffectiveAttributes(CrdtDocument doc, CrdtId targetId)
+        {
+            var elements = doc.Elements;
+            var targetIndex = elements.FindIndex(e => e.CrdtId == targetId);
+
+            var result = new Dictionary<string, string>();
+            foreach (var formatting in doc.Formattings)
+            {
+                var startIndex = formatting.Start.Id == null ? 0 : elements.FindIndex(e => e.CrdtId == formatting.Start.Id);
+                var endIndex = formatting.End.Id == null ? elements.Count - 1 : elements.FindIndex(e => e.CrdtId == formatting.End.Id);
+
+                if (targetIndex >= startIndex && targetIndex <= endIndex)
+                {
+                    foreach (var (key, value) in formatting.Attributes)
+                    {
+                        result[key] = value;
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
+        private static List<CrdtId> InsertSentence(CrdtDocument doc, string text, int nodeId)
+        {
+            var ids = new List<CrdtId>();
+            CrdtId? predecessorId = null;
+
+            for (var i = 0; i < text.Length; i++)
+            {
+                var id = new CrdtId(nodeId, i);
+                doc.Insert(Element(id, text[i], predecessorId));
+                ids.Add(id);
+                predecessorId = id;
+            }
+
+            return ids;
+        }
+
+        [Fact]
+        public void ApplyOverlappingFormatting_SameAttributeOverlap_EntireSentenceBecomesBold()
+        {
+            //Arrange
+            const string text = "The fox jumped";
+            var doc = new CrdtDocument();
+            var ids = InsertSentence(doc, text, nodeId: 1);
+
+            var korisnikABold = new CrdtFormatting
+            {
+                FormattingId = new CrdtId(2, 0),
+                Start = new CrdtAnchor(ids[0], AnchorType.Before),
+                End = new CrdtAnchor(ids[6], AnchorType.After),
+                Attributes = new Dictionary<string, string> { { "bold", "true" } }
+            };
+
+            var korisnikBBold = new CrdtFormatting
+            {
+                FormattingId = new CrdtId(3, 0),
+                Start = new CrdtAnchor(ids[4], AnchorType.Before),
+                End = new CrdtAnchor(ids[13], AnchorType.After),
+                Attributes = new Dictionary<string, string> { { "bold", "true" } }
+            };
+
+            //Act
+            doc.ApplyFormatting(korisnikABold);
+            doc.ApplyFormatting(korisnikBBold);
+
+            //Assert
+            foreach (var id in ids)
+            {
+                var attributes = EffectiveAttributes(doc, id);
+                Assert.Equal("true", attributes.GetValueOrDefault("bold"));
+            }
+        }
+
+        [Fact]
+        public void ApplyOverlappingFormatting_OverlappingCharacterGetsUnionOfAttributes()
+        {
+            //Arrange
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
+            var doc = new CrdtDocument();
+            doc.Insert(Element(idA, 'A'));
+            doc.Insert(Element(idB, 'B', idA));
+
+            var formatting1 = new CrdtFormatting
+            {
+                FormattingId = new CrdtId(2, 0),
+                Start = new CrdtAnchor(idA, AnchorType.Before),
+                End = new CrdtAnchor(idB, AnchorType.After),
+                Attributes = new Dictionary<string, string> { { "bold", "true" } }
+            };
+            var formatting2 = new CrdtFormatting
+            {
+                FormattingId = new CrdtId(2, 1),
+                Start = new CrdtAnchor(idA, AnchorType.Before),
+                End = new CrdtAnchor(idA, AnchorType.After),
+                Attributes = new Dictionary<string, string> { { "italic", "true" } }
+            };
+
+            //Act
+            doc.ApplyFormatting(formatting1);
+            doc.ApplyFormatting(formatting2);
+
+            //Assert
+            var attributesOnA = EffectiveAttributes(doc, idA);
+            Assert.Equal("true", attributesOnA.GetValueOrDefault("bold"));
+            Assert.Equal("true", attributesOnA.GetValueOrDefault("italic"));
+
+            var attributesOnB = EffectiveAttributes(doc, idB);
+            Assert.Equal("true", attributesOnB.GetValueOrDefault("bold"));
+            Assert.False(attributesOnB.ContainsKey("italic"));
+        }
     }
 }

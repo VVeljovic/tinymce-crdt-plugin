@@ -4,10 +4,10 @@
     {
         public CrdtId FormattingId { get; set; }
 
-        public CrdtId Start { get; set; }
+        public CrdtAnchor Start { get; set; }
 
-        public CrdtId End { get; set; }
+        public CrdtAnchor End { get; set; }
 
-        public TextAttributes Attributes { get; set; }
+        public Dictionary<string, string> Attributes { get; set; }
     }
 }

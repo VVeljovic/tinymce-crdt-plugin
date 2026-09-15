@@ -26,6 +26,10 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   const myNodeId = getOrCreateNodeId();
   let myCounter = 0;
   let localElements = [];
+  let localFormattings = [];
+
+  const ANCHOR_BEFORE = 0;
+  const ANCHOR_AFTER = 1;
 
   function findPredecessorId(visibleIndex) {
     if (visibleIndex === 0) {
@@ -75,13 +79,126 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       .replace(/>/g, "&gt;");
   }
 
-  function textToHtml(text) {
-    return text
-      .split(/\n+/)
-      .map((line) => `<p>${line.length ? escapeHtml(line) : "<br>"}</p>`)
-      .join("");
+  function getVisibleElements() {
+    return localElements.filter((e) => !e.isDeleted);
   }
 
+  // Resolves a formatting anchor (which points at a crdtId, not a plain index)
+  // into an index in the *current* visible-elements array.
+  function resolveAnchorVisibleIndex(anchor, visibleLength) {
+    if (!anchor || anchor.id == null) {
+      return anchor && anchor.type === ANCHOR_AFTER ? visibleLength : 0;
+    }
+
+    const idx = localElements.findIndex((e) => idsEqual(e.crdtId, anchor.id));
+    if (idx === -1) {
+      // anchor element unknown locally (e.g. formatting arrived before the
+      // insert it depends on) - fall back to the ends of the text
+      return anchor.type === ANCHOR_AFTER ? visibleLength : 0;
+    }
+
+    let visibleCount = 0;
+    for (let i = 0; i < idx; i++) {
+      if (!localElements[i].isDeleted) visibleCount++;
+    }
+
+    if (!localElements[idx].isDeleted) {
+      return anchor.type === ANCHOR_BEFORE ? visibleCount : visibleCount + 1;
+    }
+
+    // the anchored character was deleted - both Before/After collapse to
+    // the position it used to occupy
+    return visibleCount;
+  }
+
+  // For every visible character, computes the merged set of attributes
+  // (bold/italic/underline/...) coming from all formattings covering it.
+  function computeCharAttributes(visible) {
+    const marks = visible.map(() => ({}));
+
+    for (const f of localFormattings) {
+      const startIdx = resolveAnchorVisibleIndex(f.start, visible.length);
+      const endIdx = resolveAnchorVisibleIndex(f.end, visible.length);
+      for (let i = startIdx; i < endIdx && i < marks.length; i++) {
+        Object.assign(marks[i], f.attributes);
+      }
+    }
+
+    return marks;
+  }
+
+  function sameAttrs(a, b) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((k) => a[k] === b[k]);
+  }
+
+  function attrsToTags(attrs) {
+    const tags = [];
+    if (attrs.bold === "true") tags.push("strong");
+    if (attrs.italic === "true") tags.push("em");
+    if (attrs.underline === "true") tags.push("u");
+    return tags;
+  }
+
+  function renderHtml() {
+    const visible = getVisibleElements();
+    const marks = computeCharAttributes(visible);
+
+    let html = "";
+    let paragraphOpen = false;
+    let i = 0;
+
+    while (i < visible.length) {
+      if (visible[i].value === "\n") {
+        html += paragraphOpen ? "</p>" : "<p><br></p>";
+        paragraphOpen = false;
+        i++;
+        continue;
+      }
+
+      if (!paragraphOpen) {
+        html += "<p>";
+        paragraphOpen = true;
+      }
+
+      const currentAttrs = marks[i];
+      let j = i;
+      let runText = "";
+      while (
+        j < visible.length &&
+        visible[j].value !== "\n" &&
+        sameAttrs(marks[j], currentAttrs)
+      ) {
+        runText += visible[j].value;
+        j++;
+      }
+
+      let chunk = escapeHtml(runText);
+      for (const tag of attrsToTags(currentAttrs)) {
+        chunk = `<${tag}>${chunk}</${tag}>`;
+      }
+      html += chunk;
+
+      i = j;
+    }
+
+    if (paragraphOpen) html += "</p>";
+
+    return html.length ? html : "<p><br></p>";
+  }
+
+  function buildLamportCounter(ids) {
+    let maxIncoming = -1;
+
+    for (const id of ids){
+      if(id && typeof id.counter === "number" && id.counter> maxIncoming){
+        maxIncoming = id.counter;
+      }
+    }
+    return Math.max(myCounter, maxIncoming + 1);
+  }
   function diffText(oldText, newText) {
     let start = 0;
     while (
@@ -112,16 +229,25 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   }
 
   editor.on("init", () => {
-    
     connection = new signalR.HubConnectionBuilder()
       .withUrl(hubUrl)
       .withAutomaticReconnect()
       .build();
 
     connection.on("ElementsChanged", (elements) => {
+      myCounter = buildLamportCounter(elements.map((e) => e.crdtId));
       localElements = elements;
       isApplyingRemoteChange = true;
-      editor.setContent(textToHtml(renderText()));
+      editor.setContent(renderHtml());
+      isApplyingRemoteChange = false;
+    });
+
+    connection.on("FormattingsChanged", (formattings) => {
+      myCounter = buildLamportCounter(formattings.map((f) => f.formattingId));
+      console.log("formattings changed", formattings);
+      localFormattings = formattings;
+      isApplyingRemoteChange = true;
+      editor.setContent(renderHtml());
       isApplyingRemoteChange = false;
     });
 
@@ -132,6 +258,55 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
         console.log("[crdtsync] was connected, myNodeId = ", myNodeId);
       })
       .catch((err) => console.error("[crdtsync] error during connection", err));
+  });
+
+  function getFlatOffsets() {
+    const rng = editor.selection.getRng();
+    const bodyRng = editor.dom.createRng();
+    bodyRng.selectNodeContents(editor.getBody());
+
+    const startRng = bodyRng.cloneRange();
+    startRng.setEnd(rng.startContainer, rng.startOffset);
+
+    const endRng = bodyRng.cloneRange();
+    endRng.setEnd(rng.endContainer, rng.endOffset);
+
+    return { start: startRng.toString().length, end: endRng.toString().length };
+  }
+  function buildAnchor(visibleIndex, isStart) {
+    const el = isStart
+      ? findVisibleElementAt(visibleIndex)
+      : findVisibleElementAt(visibleIndex - 1);
+
+    return {
+      id: el ? el.crdtId : null,
+      type: isStart ? ANCHOR_BEFORE : ANCHOR_AFTER,
+    };
+  }
+  const FORMAT_COMMANDS = {
+    Bold: "bold",
+    Italic: "italic",
+    Underline: "underline",
+  };
+  editor.on("BeforeExecCommand", (e) => {
+    let { start, end } = getFlatOffsets();
+
+    const attributeKey = FORMAT_COMMANDS[e.command];
+    if (!attributeKey) return;
+
+    console.log(attributeKey);
+    if (start == end) return;
+
+    const formatting = {
+      formattingId: { nodeId: myNodeId, counter: myCounter++ },
+      start: buildAnchor(start, true),
+      end: buildAnchor(end, false),
+      attributes: { [attributeKey]: "true" },
+    };
+
+    localFormattings.push(formatting);
+    connection.invoke("ApplyFormatting", formatting, docId);
+    console.log("[crdtsync] sent formatting", formatting);
   });
 
   editor.on("keydown", (e) => {

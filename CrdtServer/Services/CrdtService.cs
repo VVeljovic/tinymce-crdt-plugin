@@ -56,6 +56,24 @@ namespace CrdtServer.Services
             }
         }
 
+        public override async Task FormatOperation(IAsyncStreamReader<FormatOperationMessage> requestStream,
+            IServerStreamWriter<FormatOperationMessage> responseStream,
+            ServerCallContext context)
+        {
+            await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
+            {
+                var document = _store.GetOrCreate(message.DocId);
+                var formatting = ToDomainFormatting(message.Formatting);
+                document.ApplyFormatting(formatting);
+
+                await _hubContext.Clients.Group(message.DocId).SendAsync("FormattingsChanged", document.Formattings);
+
+                _logger.LogInformation(
+                    "Applied peer formatting '{FormattingId}' on doc '{DocId}'.",
+                    message.Formatting.FormattingId, message.DocId);
+            }
+        }
+
         private static CrdtCore.CrdtId ToDomainId(CrdtId protoId) => new(protoId.NodeId, protoId.Counter);
 
         private static CrdtCore.CrdtElement ToDomainElement(CrdtElement protoElement) => new CrdtCore.CrdtElement
@@ -65,6 +83,18 @@ namespace CrdtServer.Services
             PredecessorId = protoElement.PredecessorId != null ? ToDomainId(protoElement.PredecessorId) : null,
             SuccessorId = protoElement.SuccessorId != null ? ToDomainId(protoElement.SuccessorId) : null,
             IsDeleted = protoElement.IsDeleted
+        };
+
+        private static CrdtCore.CrdtAnchor ToDomainAnchor(CrdtAnchor protoAnchor) => new(
+            protoAnchor.Id != null ? ToDomainId(protoAnchor.Id) : null,
+            (CrdtCore.AnchorType)protoAnchor.Type);
+
+        private static CrdtCore.CrdtFormatting ToDomainFormatting(CrdtFormatting protoFormatting) => new CrdtCore.CrdtFormatting
+        {
+            FormattingId = ToDomainId(protoFormatting.FormattingId),
+            Start = ToDomainAnchor(protoFormatting.Start),
+            End = ToDomainAnchor(protoFormatting.End),
+            Attributes = new Dictionary<string, string>(protoFormatting.Attributes)
         };
     }
 }

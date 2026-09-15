@@ -26,9 +26,32 @@ message DeleteOperationMessage {
 	CrdtId elementId = 2;
 }
 
+enum AnchorType {
+	Before = 0;
+	After = 1;
+}
+
+message CrdtAnchor {
+	CrdtId id = 1;
+	AnchorType type = 2;
+}
+
+message CrdtFormatting {
+	CrdtId formattingId = 1;
+	CrdtAnchor start = 2;
+	CrdtAnchor end = 3;
+	map<string, string> attributes = 4;
+}
+
+message FormatOperationMessage {
+	string docId = 1;
+	CrdtFormatting formatting = 2;
+}
+
 service CrdtService {
 rpc DeleteOperation(stream DeleteOperationMessage) returns (stream DeleteOperationMessage);
 rpc InsertOperation(stream InsertOperationMessage) returns (stream InsertOperationMessage);
+rpc FormatOperation(stream FormatOperationMessage) returns (stream FormatOperationMessage);
 }
 
 
