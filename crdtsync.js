@@ -83,78 +83,16 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     return localElements.filter((e) => !e.isDeleted);
   }
 
-  // Resolves a formatting anchor (which points at a crdtId, not a plain index)
-  // into an index in the *current* visible-elements array.
-  function resolveAnchorVisibleIndex(anchor, visibleLength) {
-    if (!anchor || anchor.id == null) {
-      return anchor && anchor.type === ANCHOR_AFTER ? visibleLength : 0;
-    }
-
-    const idx = localElements.findIndex((e) => idsEqual(e.crdtId, anchor.id));
-    if (idx === -1) {
-      // anchor element unknown locally (e.g. formatting arrived before the
-      // insert it depends on) - fall back to the ends of the text
-      return anchor.type === ANCHOR_AFTER ? visibleLength : 0;
-    }
-
-    let visibleCount = 0;
-    for (let i = 0; i < idx; i++) {
-      if (!localElements[i].isDeleted) visibleCount++;
-    }
-
-    if (!localElements[idx].isDeleted) {
-      return anchor.type === ANCHOR_BEFORE ? visibleCount : visibleCount + 1;
-    }
-
-    // the anchored character was deleted - both Before/After collapse to
-    // the position it used to occupy
-    return visibleCount;
-  }
-
-  // For every visible character, computes the merged set of attributes
-  // (bold/italic/underline/...) coming from all formattings covering it.
-  function computeCharAttributes(visible) {
-    const marks = visible.map(() => ({}));
-
-    for (const f of localFormattings) {
-      const startIdx = resolveAnchorVisibleIndex(f.start, visible.length);
-      const endIdx = resolveAnchorVisibleIndex(f.end, visible.length);
-      for (let i = startIdx; i < endIdx && i < marks.length; i++) {
-        Object.assign(marks[i], f.attributes);
-      }
-    }
-
-    return marks;
-  }
-
-  function sameAttrs(a, b) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every((k) => a[k] === b[k]);
-  }
-
-  function attrsToTags(attrs) {
-    const tags = [];
-    if (attrs.bold === "true") tags.push("strong");
-    if (attrs.italic === "true") tags.push("em");
-    if (attrs.underline === "true") tags.push("u");
-    return tags;
-  }
-
   function renderHtml() {
     const visible = getVisibleElements();
-    const marks = computeCharAttributes(visible);
 
     let html = "";
     let paragraphOpen = false;
-    let i = 0;
 
-    while (i < visible.length) {
-      if (visible[i].value === "\n") {
+    for (const el of visible) {
+      if (el.value === "\n") {
         html += paragraphOpen ? "</p>" : "<p><br></p>";
         paragraphOpen = false;
-        i++;
         continue;
       }
 
@@ -163,25 +101,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
         paragraphOpen = true;
       }
 
-      const currentAttrs = marks[i];
-      let j = i;
-      let runText = "";
-      while (
-        j < visible.length &&
-        visible[j].value !== "\n" &&
-        sameAttrs(marks[j], currentAttrs)
-      ) {
-        runText += visible[j].value;
-        j++;
-      }
-
-      let chunk = escapeHtml(runText);
-      for (const tag of attrsToTags(currentAttrs)) {
-        chunk = `<${tag}>${chunk}</${tag}>`;
-      }
-      html += chunk;
-
-      i = j;
+      html += escapeHtml(el.value);
     }
 
     if (paragraphOpen) html += "</p>";
