@@ -28,7 +28,7 @@ namespace CrdtServer.Services
                     continue;
                 }
 
-                var document = _store.GetOrCreate(message.DocId);
+                var document = await _store.GetOrCreate(message.DocId);
                 document.Insert(ToDomainElement(message.Element));
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
@@ -45,7 +45,7 @@ namespace CrdtServer.Services
         {
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
-                var document = _store.GetOrCreate(message.DocId);
+                var document = await _store.GetOrCreate(message.DocId);
                 document.Delete(ToDomainId(message.ElementId));
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
@@ -62,7 +62,7 @@ namespace CrdtServer.Services
         {
             await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
             {
-                var document = _store.GetOrCreate(message.DocId);
+                var document = await _store.GetOrCreate(message.DocId);
                 var formatting = ToDomainFormatting(message.Formatting);
                 document.ApplyFormatting(formatting);
 

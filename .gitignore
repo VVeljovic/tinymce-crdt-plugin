@@ -427,3 +427,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# CRDT document snapshots persisted to disk
+CrdtServer/documents/

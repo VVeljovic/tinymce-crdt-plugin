@@ -1,0 +1,10 @@
+{
+  "liveServer.settings.ignoreFiles": [
+    ".vscode/**",
+    "**/bin/**",
+    "**/obj/**",
+    "CrdtServer/Data/**",
+    "CrdtServer/documents/**",
+    ".git/**"
+  ]
+}

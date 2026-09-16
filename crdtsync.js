@@ -28,8 +28,127 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   let localElements = [];
   let localFormattings = [];
 
+  const OFFLINE_QUEUE_KEY = `crdtsync_offline_queue_${docId}`;
+
   const ANCHOR_BEFORE = 0;
   const ANCHOR_AFTER = 1;
+
+  // "boolean" marks are simple on/off (bold, italic...) and render as a fixed
+  // tag from TAG_FOR_ATTRIBUTE. "value" marks (color, backgroundColor...) carry
+  // an actual value (e.g. a hex color) and render as a style on a wrapping span.
+  const TAG_FOR_ATTRIBUTE = {
+    bold: "strong",
+    italic: "em",
+    underline: "u",
+    strikethrough: "s",
+    subscript: "sub",
+    superscript: "sup",
+    code: "code",
+  };
+  const STYLE_PROPERTY_FOR_ATTRIBUTE = {
+    color: "color",
+    backgroundColor: "background-color",
+    fontFamily: "font-family",
+    fontSize: "font-size",
+  };
+  const ATTRIBUTE_ORDER = [
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "subscript",
+    "superscript",
+    "code",
+    "color",
+    "backgroundColor",
+    "fontFamily",
+    "fontSize",
+  ];
+  const MARK_KIND = {
+    bold: "boolean",
+    italic: "boolean",
+    underline: "boolean",
+    strikethrough: "boolean",
+    subscript: "boolean",
+    superscript: "boolean",
+    code: "boolean",
+    color: "value",
+    backgroundColor: "value",
+    fontFamily: "value",
+    fontSize: "value",
+  };
+  // Maps a toggle-style TinyMCE format name (as seen via the generic
+  // "mceToggleFormat" command) to our attribute key.
+  const FORMAT_COMMANDS = {
+    bold: "bold",
+    italic: "italic",
+    underline: "underline",
+    strikethrough: "strikethrough",
+    subscript: "subscript",
+    superscript: "superscript",
+    code: "code",
+  };
+  // Maps a color-style TinyMCE format name to our attribute key.
+  const VALUE_COMMANDS = {
+    forecolor: "color",
+    hilitecolor: "backgroundColor",
+    backcolor: "backgroundColor",
+    fontname: "fontFamily",
+    fontsize: "fontSize",
+  };
+  async function flushOfflineQueue() {
+    const queue = getOfflineQueue();
+    if (queue === null ||  queue.length === 0) return;
+    console.log("[crdtsync] offline queue:", queue);
+    console.log("[crdtsync] offline queue JSON:", JSON.stringify(queue));
+    await connection.invoke("ApplyOfflineOperations", queue, docId);
+
+    saveOfflineQueue([]);
+  }
+  function getOfflineQueue() {
+    const stored = localStorage.getItem(OFFLINE_QUEUE_KEY);
+
+    if (!stored) {
+      return [];
+    }
+    return JSON.parse(stored);
+  }
+
+  function saveOfflineQueue(queue) {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+  }
+
+  function queueOfflineOperation(op) {
+    const queue = getOfflineQueue();
+    queue.push(op);
+    saveOfflineQueue(queue);
+  }
+
+  const HUB_METHOD_FOR_TYPE = {
+    Insert: "Insert",
+    Delete: "Delete",
+    Formatting: "ApplyFormatting",
+  };
+
+  async function sendOrQueue(operation) {
+    if (connection.state === signalR.HubConnectionState.Connected) {
+      try {
+        await connection.invoke(
+          HUB_METHOD_FOR_TYPE[operation.type],
+          operation.data,
+          docId,
+        );
+      } catch (error) {
+        console.error("[crdtsync] failed to send operation", error);
+
+        queueOfflineOperation(operation);
+      }
+
+      return;
+    }
+
+    queueOfflineOperation(operation);
+  }
 
   function findPredecessorId(visibleIndex) {
     if (visibleIndex === 0) {
@@ -83,28 +202,178 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     return localElements.filter((e) => !e.isDeleted);
   }
 
+  // Resolves a CRDT anchor (element id + Before/After) back into a position
+  // expressed as "number of visible characters before this point" - the same
+  // unit that buildAnchor()/getFlatOffsets() used when the anchor was created.
+  // This has to work even when the anchored element has since been deleted:
+  // in that case the position collapses to wherever that tombstone sits among
+  // the still-visible characters.
+  function resolveAnchorToVisibleIndex(anchor) {
+    if (!anchor || anchor.id === null || anchor.id === undefined) {
+      return anchor && anchor.type === ANCHOR_AFTER ? Infinity : 0;
+    }
+
+    const idx = localElements.findIndex((e) => idsEqual(e.crdtId, anchor.id));
+    if (idx === -1) {
+      // The element this anchor pointed to isn't known at all - drop the formatting
+      // rather than guess at a position.
+      return null;
+    }
+
+    let visibleBefore = 0;
+    for (let i = 0; i < idx; i++) {
+      if (!localElements[i].isDeleted) visibleBefore++;
+    }
+
+    const el = localElements[idx];
+    if (anchor.type === ANCHOR_BEFORE) return visibleBefore;
+    return visibleBefore + (el.isDeleted ? 0 : 1);
+  }
+
+  // Turns localFormattings into resolved [start, end) ranges over the visible
+  // text, carrying the Lamport counter of each op so overlapping/conflicting
+  // formattings on the same attribute can be resolved last-write-wins.
+  function resolveFormattingRanges() {
+    const ranges = [];
+    for (const f of localFormattings) {
+      const start = resolveAnchorToVisibleIndex(f.start);
+      const end = resolveAnchorToVisibleIndex(f.end);
+      if (start === null || end === null || start >= end) continue;
+
+      ranges.push({
+        start,
+        end,
+        attributes: f.attributes,
+        counter: f.formattingId ? f.formattingId.counter : -1,
+      });
+    }
+    return ranges;
+  }
+
+  // Whether a winning value counts as "on" for a given attribute key - boolean
+  // marks are on when the value is the string "true"; value marks are on
+  // whenever they carry any value other than "false"/empty.
+  function isMarkOn(key, value) {
+    const kind = MARK_KIND[key] || "boolean";
+    return kind === "boolean" ? value === "true" : !!value && value !== "false";
+  }
+
+  // Returns a { key: value } object of attributes that are "on" at visible
+  // index i, resolving conflicts between overlapping formattings on the same
+  // attribute by highest Lamport counter wins.
+  function activeAttributesAt(ranges, i) {
+    const winners = {};
+
+    for (const r of ranges) {
+      if (i < r.start || i >= r.end) continue;
+      for (const key of Object.keys(r.attributes)) {
+        const current = winners[key];
+        if (!current || r.counter > current.counter) {
+          winners[key] = { counter: r.counter, value: r.attributes[key] };
+        }
+      }
+    }
+
+    const active = {};
+    for (const key of ATTRIBUTE_ORDER) {
+      const winner = winners[key];
+      if (winner && isMarkOn(key, winner.value)) {
+        active[key] = winner.value;
+      }
+    }
+    return active;
+  }
+
+  function isAttributeActiveOverRange(ranges, attributeKey, start, end) {
+    if (start >= end) return false;
+    for (let i = start; i < end; i++) {
+      if (!(attributeKey in activeAttributesAt(ranges, i))) return false;
+    }
+    return true;
+  }
+
+  function serializeActive(active) {
+    return ATTRIBUTE_ORDER.filter((key) => key in active)
+      .map((key) => `${key}:${active[key]}`)
+      .join("|");
+  }
+
+  // Builds the open/close HTML for a given active-attributes state: value
+  // marks (color, backgroundColor) are combined into one wrapping <span
+  // style="...">, boolean marks each get their own nested tag from
+  // TAG_FOR_ATTRIBUTE.
+  function buildTagsFor(active) {
+    const openTags = [];
+    const closeTags = [];
+
+    const styleParts = [];
+    for (const key of ATTRIBUTE_ORDER) {
+      if (MARK_KIND[key] === "value" && key in active) {
+        const prop = STYLE_PROPERTY_FOR_ATTRIBUTE[key];
+        if (prop) styleParts.push(`${prop}: ${active[key]}`);
+      }
+    }
+    if (styleParts.length) {
+      openTags.push(`<span style="${styleParts.join("; ")}">`);
+      closeTags.unshift("</span>");
+    }
+
+    for (const key of ATTRIBUTE_ORDER) {
+      if (MARK_KIND[key] !== "value" && key in active) {
+        openTags.push(`<${TAG_FOR_ATTRIBUTE[key]}>`);
+        closeTags.unshift(`</${TAG_FOR_ATTRIBUTE[key]}>`);
+      }
+    }
+
+    return { openHtml: openTags.join(""), closeHtml: closeTags.join("") };
+  }
+
   function renderHtml() {
     const visible = getVisibleElements();
+    const ranges = resolveFormattingRanges();
 
     let html = "";
     let paragraphOpen = false;
+    let openActive = {};
+    let openCloseHtml = "";
 
-    for (const el of visible) {
+    function closeOpenAttrs() {
+      html += openCloseHtml;
+      openActive = {};
+      openCloseHtml = "";
+    }
+
+    visible.forEach((el, i) => {
       if (el.value === "\n") {
+        closeOpenAttrs();
         html += paragraphOpen ? "</p>" : "<p><br></p>";
         paragraphOpen = false;
-        continue;
+        return;
       }
 
       if (!paragraphOpen) {
         html += "<p>";
         paragraphOpen = true;
+        openActive = {};
+        openCloseHtml = "";
+      }
+
+      const active = activeAttributesAt(ranges, i);
+      if (serializeActive(active) !== serializeActive(openActive)) {
+        closeOpenAttrs();
+        const { openHtml, closeHtml } = buildTagsFor(active);
+        html += openHtml;
+        openActive = active;
+        openCloseHtml = closeHtml;
       }
 
       html += escapeHtml(el.value);
-    }
+    });
 
-    if (paragraphOpen) html += "</p>";
+    if (paragraphOpen) {
+      closeOpenAttrs();
+      html += "</p>";
+    }
 
     return html.length ? html : "<p><br></p>";
   }
@@ -112,8 +381,8 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   function buildLamportCounter(ids) {
     let maxIncoming = -1;
 
-    for (const id of ids){
-      if(id && typeof id.counter === "number" && id.counter> maxIncoming){
+    for (const id of ids) {
+      if (id && typeof id.counter === "number" && id.counter > maxIncoming) {
         maxIncoming = id.counter;
       }
     }
@@ -154,7 +423,42 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       .withAutomaticReconnect()
       .build();
 
+    connection.onreconnecting((error) => {
+      console.log("[crdtsync] connection lost, reconnecting...", error);
+
+      editor.notificationManager.open({
+        text: "The server is currently unavailable. You can continue editing in offline mode. Your changes will be synchronized when the connection is restored.",
+        type: "warning",
+        timeout: 0,
+      });
+    });
+
+    connection.onreconnected(async () => {
+      console.log("REKONEKCIJA SE DESILA");
+
+      editor.notificationManager.open({
+        text: "Connection to the server has been restored.",
+        type: "success",
+        timeout: 3000,
+      });
+      await connection.invoke("JoinDocument", docId);
+
+      await flushOfflineQueue();
+
+    });
+
+    connection.onclose((error) => {
+      console.log("[crdtsync] connection closed", error);
+
+      editor.notificationManager.open({
+        text: "The server is currently unavailable. You can continue editing in offline mode. Your changes will be synchronized when the connection is restored.",
+        type: "warning",
+        timeout: 0,
+      });
+    });
+
     connection.on("ElementsChanged", (elements) => {
+      console.log('primenio elementschanged', elements);
       myCounter = buildLamportCounter(elements.map((e) => e.crdtId));
       localElements = elements;
       isApplyingRemoteChange = true;
@@ -164,7 +468,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
 
     connection.on("FormattingsChanged", (formattings) => {
       myCounter = buildLamportCounter(formattings.map((f) => f.formattingId));
-      console.log("formattings changed", formattings);
+      console.log("[crdtsync] formattings changed", formattings);
       localFormattings = formattings;
       isApplyingRemoteChange = true;
       editor.setContent(renderHtml());
@@ -203,29 +507,79 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       type: isStart ? ANCHOR_BEFORE : ANCHOR_AFTER,
     };
   }
-  const FORMAT_COMMANDS = {
-    Bold: "bold",
-    Italic: "italic",
-    Underline: "underline",
-  };
+
   editor.on("BeforeExecCommand", (e) => {
+    const commandLower = e.command.toLowerCase();
+    let attributeKey;
+    let rawValue;
+
+    if (commandLower === "mcetoggleformat") {
+      // Modern toolbar buttons for on/off marks (strikethrough, subscript,
+      // superscript, code, and also bold/italic/underline in some UI paths)
+      // route through this generic command, with the actual format name
+      // passed as e.value.
+      attributeKey = FORMAT_COMMANDS[String(e.value).toLowerCase()];
+    } else if (commandLower === "mceapplytextcolor") {
+      // The built-in color-picker toolbar buttons (forecolor/backcolor) are
+      // believed to route through this command, but the exact shape of
+      // which arg carries the format ("forecolor"/"hilitecolor") vs the
+      // color value isn't confirmed yet for this TinyMCE build - try the
+      // known possibilities and fall back to "forecolor" if unclear. If
+      // color doesn't apply, check the "[crdtsync] unhandled command" log
+      // below for the real e.command/e.value/e.ui shape.
+      const format =
+        typeof e.ui === "string" ? e.ui : e.value && e.value.format;
+      rawValue =
+        typeof e.value === "string" ? e.value : e.value && e.value.value;
+      attributeKey =
+        VALUE_COMMANDS[String(format || "forecolor").toLowerCase()];
+    } else if (VALUE_COMMANDS[commandLower]) {
+      // Legacy-named color commands (ForeColor/HiliteColor/BackColor), if
+      // TinyMCE fires those directly instead of mceApplyTextcolor.
+      attributeKey = VALUE_COMMANDS[commandLower];
+      rawValue = e.value;
+    } else {
+      attributeKey = FORMAT_COMMANDS[commandLower];
+    }
+
+    if (!attributeKey) {
+      console.log("[crdtsync] unhandled command", e.command, e.value, e.ui);
+      return;
+    }
+
     let { start, end } = getFlatOffsets();
-
-    const attributeKey = FORMAT_COMMANDS[e.command];
-    if (!attributeKey) return;
-
-    console.log(attributeKey);
     if (start == end) return;
+
+    let value;
+    if (MARK_KIND[attributeKey] === "value") {
+      value = rawValue;
+      if (!value) return;
+    } else {
+      // If the whole selection is already formatted with this attribute, this
+      // toggle should remove it instead of re-applying it - otherwise clicking
+      // e.g. Bold on bold text could never turn bold back off.
+      const ranges = resolveFormattingRanges();
+      const isActive = isAttributeActiveOverRange(
+        ranges,
+        attributeKey,
+        start,
+        end,
+      );
+      value = isActive ? "false" : "true";
+    }
 
     const formatting = {
       formattingId: { nodeId: myNodeId, counter: myCounter++ },
       start: buildAnchor(start, true),
       end: buildAnchor(end, false),
-      attributes: { [attributeKey]: "true" },
+      attributes: { [attributeKey]: value },
     };
 
     localFormattings.push(formatting);
-    connection.invoke("ApplyFormatting", formatting, docId);
+    sendOrQueue({
+      type: "Formatting",
+      data: formatting,
+    });
     console.log("[crdtsync] sent formatting", formatting);
   });
 
@@ -254,7 +608,10 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       const el = findVisibleElementAt(start);
       if (!el) continue;
       el.isDeleted = true;
-      connection.invoke("Delete", el.crdtId, docId);
+      sendOrQueue({
+        type: "Delete",
+        data: el.crdtId,
+      });
     }
 
     for (let i = 0; i < inserted.length; i++) {
@@ -274,7 +631,10 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
         : 0;
       localElements.splice(insertAt, 0, newElement);
 
-      connection.invoke("Insert", newElement, docId);
+      sendOrQueue({
+        type: "Insert",
+        data: newElement, 
+      });
     }
   });
 
