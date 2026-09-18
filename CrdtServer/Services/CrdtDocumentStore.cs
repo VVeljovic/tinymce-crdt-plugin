@@ -1,22 +1,27 @@
 using CrdtCore;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace CrdtServer.Services
 {
-    public class CrdtDocumentStore : IDisposable
+    public class CrdtDocumentStore
     {
-        private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(1);
-
         private readonly ConcurrentDictionary<string, CrdtDocument> _documents = new();
-        private readonly ConcurrentDictionary<string, byte> _dirtyDocIds = new();
-        private readonly string _dataDirectory = "Data";
-        private readonly Timer _flushTimer;
+        private readonly string _dataDirectory;
 
-        public CrdtDocumentStore(IHostApplicationLifetime lifetime)
+        public CrdtDocumentStore(IConfiguration configuration)
         {
-            _flushTimer = new Timer(_ => FlushDirty(), null, FlushInterval, FlushInterval);
-            lifetime.ApplicationStopping.Register(FlushDirty);
+            // Each server instance persists to its own folder, named after the
+            // port it listens on, so two server processes launched from the
+            // same working directory never read/write the same physical file.
+            var urls = configuration["urls"]
+                ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+                ?? string.Empty;
+            var portMatch = Regex.Match(urls, @":(\d+)");
+            var port = portMatch.Success ? portMatch.Groups[1].Value : "default";
+
+            _dataDirectory = $"Data-{port}";
         }
 
         public async Task<CrdtDocument> GetOrCreate(string docId)
@@ -30,15 +35,9 @@ namespace CrdtServer.Services
             {
                 var json = await File.ReadAllTextAsync(path);
 
-                if (string.IsNullOrEmpty(json))
-                {
-                    document = new CrdtDocument();
-                }
-                else
-                {
-                    document = JsonSerializer.Deserialize<CrdtDocument>(json)
-                               ?? new CrdtDocument();
-                }
+                document = string.IsNullOrEmpty(json)
+                    ? new CrdtDocument()
+                    : JsonSerializer.Deserialize<CrdtDocument>(json) ?? new CrdtDocument();
             }
             else
             {
@@ -50,8 +49,6 @@ namespace CrdtServer.Services
             return document;
         }
 
-        public void MarkDirty(string docId) => _dirtyDocIds[docId] = 0;
-
         public async Task Save(string docId, CrdtDocument document)
         {
             Directory.CreateDirectory(_dataDirectory);
@@ -62,32 +59,5 @@ namespace CrdtServer.Services
 
             await File.WriteAllTextAsync(path, json);
         }
-
-        private void FlushDirty()
-        {
-            foreach (var docId in _dirtyDocIds.Keys)
-            {
-                if (!_dirtyDocIds.TryRemove(docId, out _))
-                {
-                    continue;
-                }
-
-                if (!_documents.TryGetValue(docId, out var document))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    Save(docId, document).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    _dirtyDocIds[docId] = 0;
-                }
-            }
-        }
-
-        public void Dispose() => _flushTimer.Dispose();
     }
 }

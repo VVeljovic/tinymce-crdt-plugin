@@ -428,5 +428,6 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# CRDT document snapshots persisted to disk
+# CRDT document snapshots persisted to disk (one folder per server instance, named by port)
 CrdtServer/documents/
+CrdtServer/Data-*/

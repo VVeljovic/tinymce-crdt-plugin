@@ -25,11 +25,11 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
         var document = await store.GetOrCreate(docId);
 
         document.Insert(crdtElement);
-        store.MarkDirty(docId);
+        _ = store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        await peerSyncClient.BroadcastInsertAsync(ToWireElement(crdtElement), docId);
+        _ = peerSyncClient.BroadcastInsertAsync(ToWireElement(crdtElement), docId);
     }
 
     public async Task Delete(CrdtCore.CrdtId crdtId, string docId)
@@ -37,11 +37,11 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
         var document = await store.GetOrCreate(docId);
 
         document.Delete(crdtId);
-        store.MarkDirty(docId);
+        _ = store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        await peerSyncClient.BroadcastDeleteAsync(ToWireId(crdtId), docId);
+        _ = peerSyncClient.BroadcastDeleteAsync(ToWireId(crdtId), docId);
     }
 
     public async Task ApplyFormatting(CrdtCore.CrdtFormatting formatting, string docId)
@@ -49,11 +49,11 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
         var document = await store.GetOrCreate(docId);
 
         document.ApplyFormatting(formatting);
-        store.MarkDirty(docId);
+        _ = store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings);
 
-        await peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
+        _ = peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
     }
 
     public async Task ApplyOfflineOperations(List<CrdtCore.OfflineOperations> operations, string docId)
@@ -69,7 +69,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (insertElement != null)
                     {
                         document.Insert(insertElement);
-                        await peerSyncClient.BroadcastInsertAsync(ToWireElement(insertElement), docId);
+                        _ = peerSyncClient.BroadcastInsertAsync(ToWireElement(insertElement), docId);
                     }
                     break;
                 case "Delete":
@@ -77,7 +77,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (deleteId != null)
                     {
                         document.Delete(deleteId);
-                        await peerSyncClient.BroadcastDeleteAsync(ToWireId(deleteId), docId);
+                        _ = peerSyncClient.BroadcastDeleteAsync(ToWireId(deleteId), docId);
                     }
                     break;
                 case "Formatting":
@@ -85,13 +85,13 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (formatting != null)
                     {
                         document.ApplyFormatting(formatting);
-                        await peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
+                        _ = peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
                     }
                     break;
             }
         }
 
-        store.MarkDirty(docId);
+        _ = store.Save(docId, document);
 
         await Clients.Group(docId).SendAsync("ElementsChanged", document.Elements);
         await Clients.Group(docId).SendAsync("FormattingsChanged", document.Formattings);

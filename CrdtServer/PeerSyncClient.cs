@@ -11,6 +11,10 @@ namespace CrdtServer
         private readonly List<AsyncDuplexStreamingCall<FormatOperationMessage, FormatOperationMessage>> _formatCalls = new();
         private readonly ILogger<PeerSyncClient> _logger;
 
+        private readonly SemaphoreSlim _insertLock = new(1, 1);
+        private readonly SemaphoreSlim _deleteLock = new(1, 1);
+        private readonly SemaphoreSlim _formatLock = new(1, 1);
+
         public PeerSyncClient(IConfiguration configuration, ILogger<PeerSyncClient> logger)
         {
             _logger = logger;
@@ -44,16 +48,24 @@ namespace CrdtServer
                 DocId = docId,
             };
 
-            foreach (var call in _insertCalls)
+            await _insertLock.WaitAsync();
+            try
             {
-                try
+                foreach (var call in _insertCalls)
                 {
-                    await call.RequestStream.WriteAsync(message);
+                    try
+                    {
+                        await call.RequestStream.WriteAsync(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to forward insert to a peer.");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to forward insert to a peer.");
-                }
+            }
+            finally
+            {
+                _insertLock.Release();
             }
         }
 
@@ -68,16 +80,25 @@ namespace CrdtServer
                 ElementId = elementId,
                 DocId = docId,
             };
-            foreach (var call in _deleteCalls)
+
+            await _deleteLock.WaitAsync();
+            try
             {
-                try
+                foreach (var call in _deleteCalls)
                 {
-                    await call.RequestStream.WriteAsync(message);
+                    try
+                    {
+                        await call.RequestStream.WriteAsync(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to forward delete to a peer.");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to forward delete to a peer.");
-                }
+            }
+            finally
+            {
+                _deleteLock.Release();
             }
         }
 
@@ -94,16 +115,24 @@ namespace CrdtServer
                 DocId = docId,
             };
 
-            foreach (var call in _formatCalls)
+            await _formatLock.WaitAsync();
+            try
             {
-                try
+                foreach (var call in _formatCalls)
                 {
-                    await call.RequestStream.WriteAsync(message);
+                    try
+                    {
+                        await call.RequestStream.WriteAsync(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to forward formatting to a peer.");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to forward formatting to a peer.");
-                }
+            }
+            finally
+            {
+                _formatLock.Release();
             }
         }
     }

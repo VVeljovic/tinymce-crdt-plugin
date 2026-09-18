@@ -4,6 +4,7 @@
     "**/bin/**",
     "**/obj/**",
     "CrdtServer/Data/**",
+    "CrdtServer/Data-*/**",
     "CrdtServer/documents/**",
     ".git/**"
   ]

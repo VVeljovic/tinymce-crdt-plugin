@@ -30,6 +30,7 @@ namespace CrdtServer.Services
 
                 var document = await _store.GetOrCreate(message.DocId);
                 document.Insert(ToDomainElement(message.Element));
+                _ = _store.Save(message.DocId, document);
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 
@@ -47,6 +48,7 @@ namespace CrdtServer.Services
             {
                 var document = await _store.GetOrCreate(message.DocId);
                 document.Delete(ToDomainId(message.ElementId));
+                _ = _store.Save(message.DocId, document);
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("ElementsChanged", document.Elements);
 
@@ -65,6 +67,7 @@ namespace CrdtServer.Services
                 var document = await _store.GetOrCreate(message.DocId);
                 var formatting = ToDomainFormatting(message.Formatting);
                 document.ApplyFormatting(formatting);
+                _ = _store.Save(message.DocId, document);
 
                 await _hubContext.Clients.Group(message.DocId).SendAsync("FormattingsChanged", document.Formattings);
 

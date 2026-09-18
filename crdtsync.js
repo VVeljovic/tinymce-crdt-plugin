@@ -27,6 +27,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   let myCounter = 0;
   let localElements = [];
   let localFormattings = [];
+  let pendingValueAttributes = {};
 
   const OFFLINE_QUEUE_KEY = `crdtsync_offline_queue_${docId}`;
 
@@ -548,7 +549,17 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     }
 
     let { start, end } = getFlatOffsets();
-    if (start == end) return;
+
+    if (start == end) {
+      // Collapsed cursor - nothing to wrap yet. For value marks (font,
+      // size, color) there's no native "match" API to query later like
+      // formatter.match() for booleans, so remember the chosen value
+      // ourselves and apply it to whatever gets typed next.
+      if (MARK_KIND[attributeKey] === "value" && rawValue) {
+        pendingValueAttributes[attributeKey] = rawValue;
+      }
+      return;
+    }
 
     let value;
     if (MARK_KIND[attributeKey] === "value") {
@@ -633,8 +644,45 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
 
       sendOrQueue({
         type: "Insert",
-        data: newElement, 
+        data: newElement,
       });
+
+      // Attributes inherited from the CRDT model (the character immediately to
+      // the left) cover "typing inside already-formatted text". Attributes
+      // TinyMCE itself currently has toggled (editor.formatter.match) also
+      // cover "clicked Bold with the cursor collapsed, then started typing" -
+      // native contentEditable/TinyMCE track that pending state, our CRDT
+      // model doesn't unless we ask TinyMCE directly. TinyMCE's live state
+      // wins for boolean marks since it reflects an explicit toggle either way.
+      const inheritedAttributes =
+        start + i > 0
+          ? activeAttributesAt(resolveFormattingRanges(), start + i - 1)
+          : {};
+      const combinedAttributes = { ...inheritedAttributes, ...pendingValueAttributes };
+      for (const key of Object.keys(FORMAT_COMMANDS)) {
+        if (editor.formatter.match(key)) {
+          combinedAttributes[key] = "true";
+        } else {
+          delete combinedAttributes[key];
+        }
+      }
+      const inheritedKeys = Object.keys(combinedAttributes);
+      if (inheritedKeys.length > 0) {
+        const formatting = {
+          formattingId: { nodeId: myNodeId, counter: myCounter++ },
+          start: { id: newElement.crdtId, type: ANCHOR_BEFORE },
+          end: { id: newElement.crdtId, type: ANCHOR_AFTER },
+          attributes: Object.fromEntries(
+            inheritedKeys.map((key) => [key, combinedAttributes[key]]),
+          ),
+        };
+
+        localFormattings.push(formatting);
+        sendOrQueue({
+          type: "Formatting",
+          data: formatting,
+        });
+      }
     }
   });
 
