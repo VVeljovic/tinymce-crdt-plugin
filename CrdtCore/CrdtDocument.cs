@@ -6,6 +6,8 @@
 
         public List<CrdtFormatting> Formattings { get; set; } = [];
 
+        private readonly List<CrdtElement> _pendingElements = [];
+
         public CrdtDocument() { }
 
         private int FindElementIndexById(CrdtId? crdtId)
@@ -27,13 +29,42 @@
 
         public CrdtElement Insert(CrdtElement crdtElement)
         {
-            InsertElementInOrder(crdtElement);
+            if (!TryInsertElementInOrder(crdtElement))
+            {
+                _pendingElements.Add(crdtElement);
+                return crdtElement;
+            }
+
+            ApplyPendingOperations();
 
             return crdtElement;
         }
 
-        private void InsertElementInOrder(CrdtElement newElement)
+        private void ApplyPendingOperations()
         {
+            bool anyInserted;
+            do
+            {
+                anyInserted = false;
+                for (int i = _pendingElements.Count - 1; i >= 0; i--)
+                {
+                    var pendingElement = _pendingElements[i];
+                    if (TryInsertElementInOrder(pendingElement))
+                    {
+                        _pendingElements.RemoveAt(i);
+                        anyInserted = true;
+                    }
+                }
+            } while (anyInserted);
+        }
+
+        private bool TryInsertElementInOrder(CrdtElement newElement)
+        {
+            if(newElement.PredecessorId != null && FindElementIndexById(newElement.PredecessorId) == -1)
+            {
+                return false;
+            }
+
             var insertAfterIndex = FindElementIndexById(newElement.PredecessorId);
             var candidateIndex = insertAfterIndex + 1;
 
@@ -60,6 +91,8 @@
             }
 
             Elements.Insert(candidateIndex, newElement);
+
+            return true;
         }
 
 

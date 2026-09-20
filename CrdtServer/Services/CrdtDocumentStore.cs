@@ -55,7 +55,11 @@ namespace CrdtServer.Services
 
             var path = Path.Combine(_dataDirectory, $"{docId}.json");
 
-            var json = JsonSerializer.Serialize(document);
+            string json;
+            lock (document)
+            {
+                json = JsonSerializer.Serialize(document);
+            }
 
             await File.WriteAllTextAsync(path, json);
         }

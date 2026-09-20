@@ -1,9 +1,8 @@
 using System.Text.Json;
-using CrdtServer;
 using CrdtServer.Services;
 using Microsoft.AspNetCore.SignalR;
 
-public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : Hub
+public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hub
 {
     private static readonly JsonSerializerOptions OfflineOperationJsonOptions = new()
     {
@@ -29,7 +28,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = peerSyncClient.BroadcastInsertAsync(ToWireElement(crdtElement), docId);
+        _ = publisher.PublishInsertAsync(crdtElement, docId);
     }
 
     public async Task Delete(CrdtCore.CrdtId crdtId, string docId)
@@ -41,7 +40,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = peerSyncClient.BroadcastDeleteAsync(ToWireId(crdtId), docId);
+        _ = publisher.PublishDeleteAsync(crdtId, docId);
     }
 
     public async Task ApplyFormatting(CrdtCore.CrdtFormatting formatting, string docId)
@@ -53,7 +52,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings);
 
-        _ = peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
+        _ = publisher.PublishFormatAsync(formatting, docId);
     }
 
     public async Task ApplyOfflineOperations(List<CrdtCore.OfflineOperations> operations, string docId)
@@ -69,7 +68,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (insertElement != null)
                     {
                         document.Insert(insertElement);
-                        _ = peerSyncClient.BroadcastInsertAsync(ToWireElement(insertElement), docId);
+                        _ = publisher.PublishInsertAsync(insertElement, docId);
                     }
                     break;
                 case "Delete":
@@ -77,7 +76,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (deleteId != null)
                     {
                         document.Delete(deleteId);
-                        _ = peerSyncClient.BroadcastDeleteAsync(ToWireId(deleteId), docId);
+                        _ = publisher.PublishDeleteAsync(deleteId, docId);
                     }
                     break;
                 case "Formatting":
@@ -85,7 +84,7 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
                     if (formatting != null)
                     {
                         document.ApplyFormatting(formatting);
-                        _ = peerSyncClient.BroadcastFormatAsync(ToWireFormatting(formatting), docId);
+                        _ = publisher.PublishFormatAsync(formatting, docId);
                     }
                     break;
             }
@@ -95,38 +94,5 @@ public class CrdtHub(CrdtDocumentStore store, PeerSyncClient peerSyncClient) : H
 
         await Clients.Group(docId).SendAsync("ElementsChanged", document.Elements);
         await Clients.Group(docId).SendAsync("FormattingsChanged", document.Formattings);
-    }
-
-    private static CrdtId ToWireId(CrdtCore.CrdtId id) =>
-        new CrdtId { NodeId = id.NodeId, Counter = id.Counter };
-
-    private static CrdtElement ToWireElement(CrdtCore.CrdtElement element) =>
-        new CrdtElement
-        {
-            Id = ToWireId(element.CrdtId),
-            Value = element.Value.ToString(),
-            PredecessorId = element.PredecessorId != null ? ToWireId(element.PredecessorId) : null,
-            SuccessorId = element.SuccessorId != null ? ToWireId(element.SuccessorId) : null,
-            IsDeleted = element.IsDeleted
-        };
-
-    private static CrdtAnchor ToWireAnchor(CrdtCore.CrdtAnchor anchor) =>
-        new CrdtAnchor
-        {
-            Id = anchor.Id != null ? ToWireId(anchor.Id) : null,
-            Type = (AnchorType)anchor.Type
-        };
-
-    private static CrdtFormatting ToWireFormatting(CrdtCore.CrdtFormatting formatting)
-    {
-        var wire = new CrdtFormatting
-        {
-            FormattingId = ToWireId(formatting.FormattingId),
-            Start = ToWireAnchor(formatting.Start),
-            End = ToWireAnchor(formatting.End),
-        };
-        wire.Attributes.Add(formatting.Attributes);
-
-        return wire;
     }
 }
