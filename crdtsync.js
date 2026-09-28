@@ -272,6 +272,11 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
     fontsize: "fontSize",
   };
 
+  const EXCLUSIVE_ATTRIBUTES = {
+    subscript: "superscript",
+    superscript: "subscript",
+  };
+
   const TAG_FOR_ATTRIBUTE = {
     bold: "strong",
     italic: "em",
@@ -596,8 +601,16 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
 
     if (!formattingAttribute) return;
 
+    const attributes = { [formattingAttribute.key]: formattingAttribute.value };
+
+    const exclusivePartner = EXCLUSIVE_ATTRIBUTES[formattingAttribute.key];
+    if (exclusivePartner && formattingAttribute.value === "true") {
+      attributes[exclusivePartner] = "false";
+      editor.formatter.remove(exclusivePartner);
+    }
+
     if (indexes.start === indexes.end) {
-      pendingAttributes[formattingAttribute.key] = formattingAttribute.value;
+      Object.assign(pendingAttributes, attributes);
       return;
     }
 
@@ -605,7 +618,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       formattingId: { nodeId: myNodeId, counter: myCounter++ },
       start: startAnchor,
       end: endAnchor,
-      attributes: { [formattingAttribute.key]: formattingAttribute.value },
+      attributes,
     };
     localFormattings.push(formatting);
     sendOrQueue({ type: "Formatting", data: formatting });

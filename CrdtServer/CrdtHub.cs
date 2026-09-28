@@ -25,11 +25,11 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         var document = await store.GetOrCreate(docId);
 
         document.Insert(crdtElement);
-        _ = store.Save(docId, document);
+        await store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = producer.SendOperation("Insert", docId, crdtElement);
+        await producer.SendOperation("Insert", docId, crdtElement);
     }
 
     public async Task Delete(CrdtCore.CrdtId crdtId, string docId)
@@ -37,11 +37,11 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         var document = await store.GetOrCreate(docId);
 
         document.Delete(crdtId);
-        _ = store.Save(docId, document);
+        await store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = producer.SendOperation("Delete", docId, crdtId);
+        await producer.SendOperation("Delete", docId, crdtId);
     }
 
     public async Task ApplyFormatting(CrdtCore.CrdtFormatting formatting, string docId)
@@ -49,11 +49,11 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         var document = await store.GetOrCreate(docId);
 
         document.ApplyFormatting(formatting);
-        _ = store.Save(docId, document);
+        await store.Save(docId, document);
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings);
 
-        _ = producer.SendOperation("Formatting", docId, formatting);
+        await producer.SendOperation("Formatting", docId, formatting);
     }
 
     public async Task ApplyOfflineOperations(List<CrdtCore.OfflineOperations> operations, string docId)
@@ -69,7 +69,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
                     if (insertElement != null)
                     {
                         document.Insert(insertElement);
-                        _ = producer.SendOperation("Insert", docId, insertElement);
+                        await producer.SendOperation("Insert", docId, insertElement);
                     }
                     break;
                 case "Delete":
@@ -77,7 +77,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
                     if (deleteId != null)
                     {
                         document.Delete(deleteId);
-                        _ = producer.SendOperation("Delete", docId, deleteId);
+                        await producer.SendOperation("Delete", docId, deleteId);
                     }
                     break;
                 case "Formatting":
@@ -85,13 +85,13 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
                     if (formatting != null)
                     {
                         document.ApplyFormatting(formatting);
-                        _ = producer.SendOperation("Formatting", docId, formatting);
+                        await producer.SendOperation("Formatting", docId, formatting);
                     }
                     break;
             }
         }
 
-        _ = store.Save(docId, document);
+        await store.Save(docId, document);
 
         await Clients.Group(docId).SendAsync("ElementsChanged", document.Elements);
         await Clients.Group(docId).SendAsync("FormattingsChanged", document.Formattings);

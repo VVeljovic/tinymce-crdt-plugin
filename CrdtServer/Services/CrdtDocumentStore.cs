@@ -12,13 +12,8 @@ namespace CrdtServer.Services
 
         public CrdtDocumentStore(IConfiguration configuration)
         {
-            var urls = configuration["urls"]
-                ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
-                ?? string.Empty;
-            var portMatch = Regex.Match(urls, @":(\d+)");
-            var port = portMatch.Success ? portMatch.Groups[1].Value : "default";
-
-            _dataDirectory = $"Data-{port}";
+            var instanceId = configuration["RabbitMq:InstanceId"] ?? "default";
+            _dataDirectory = $"Data-{instanceId}";
         }
 
         public async Task<CrdtDocument> GetOrCreate(string docId)

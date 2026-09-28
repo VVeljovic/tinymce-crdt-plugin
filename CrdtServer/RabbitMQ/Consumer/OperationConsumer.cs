@@ -79,7 +79,7 @@ namespace CrdtServer.RabbitMQ.Consumer
                     break;
             }
 
-            _ = store.Save(envelope.DocId, document);
+            await store.Save(envelope.DocId, document);
         }
 
         private static readonly JsonSerializerOptions JsonOptions = new()
