@@ -51,18 +51,11 @@ namespace CrdtServer.Services
 
             await channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Fanout, durable: true, cancellationToken: stoppingToken);
 
-            // Durable, named after our own instance - restarting reconnects to
-            // the SAME queue, so anything the broker buffered while we were
-            // down (or busy) is still there waiting for us.
             var queueName = $"crdt-queue-{_instanceId}";
             await channel.QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: stoppingToken);
             await channel.QueueBindAsync(queueName, _exchangeName, routingKey: string.Empty, cancellationToken: stoppingToken);
 
-            // prefetchCount: 1 - the broker won't deliver the next message
-            // until this one is acked, and we only ack after ApplyAsync
-            // finishes. That forces strictly sequential processing, which
-            // matters here: adjacent character inserts must be applied in
-            // order or InsertElementInOrder can place them wrong.
+
             await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, cancellationToken: stoppingToken);
 
             var consumer = new AsyncEventingBasicConsumer(channel);

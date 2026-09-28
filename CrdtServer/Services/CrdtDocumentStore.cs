@@ -12,9 +12,6 @@ namespace CrdtServer.Services
 
         public CrdtDocumentStore(IConfiguration configuration)
         {
-            // Each server instance persists to its own folder, named after the
-            // port it listens on, so two server processes launched from the
-            // same working directory never read/write the same physical file.
             var urls = configuration["urls"]
                 ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
                 ?? string.Empty;

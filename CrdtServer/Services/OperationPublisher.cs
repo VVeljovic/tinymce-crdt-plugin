@@ -12,24 +12,11 @@ namespace CrdtServer.Services
         private readonly string _exchangeName;
         private readonly string _instanceId;
 
-        // Guards the whole publish path (connect-if-needed + the actual
-        // write) as a single critical section. Callers fire these
-        // Publish*Async calls without awaiting them, so several can be in
-        // flight at once; IChannel isn't safe for concurrent writes, and
-        // SemaphoreSlim doesn't guarantee FIFO release order for waiters -
-        // splitting "ensure connected" and "publish" into two separate locks
-        // let calls interleave/reorder across them (e.g. on the very first
-        // publish, while the connection is still being established), which
-        // scrambled the delivery order peers saw. One lock around the entire
-        // operation removes that reordering window.
         private readonly SemaphoreSlim _lock = new(1, 1);
 
         private IConnection? _connection;
         private IChannel? _channel;
 
-        // Also used as the "origin" tag on published messages, so a consumer
-        // can skip messages it published itself instead of re-applying its
-        // own operations.
         public string InstanceId => _instanceId;
 
         public OperationPublisher(IConfiguration configuration, ILogger<OperationPublisher> logger)
@@ -89,7 +76,6 @@ namespace CrdtServer.Services
             }
         }
 
-        // Only ever called while holding _lock, so no separate locking needed here.
         private async Task<IChannel> GetChannelAsync()
         {
             if (_channel != null)
