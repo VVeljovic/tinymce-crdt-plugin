@@ -1,5 +1,8 @@
 
 using CrdtServer;
+using CrdtServer.RabbitMQ.Connection;
+using CrdtServer.RabbitMQ.Consumer;
+using CrdtServer.RabbitMQ.Producer;
 using CrdtServer.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,7 +13,8 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<CrdtDocumentStore>();
-builder.Services.AddSingleton<OperationPublisher>();
+builder.Services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
+builder.Services.AddSingleton<IOperationProducer, OperationProducer>();
 builder.Services.AddHostedService<OperationConsumer>();
 builder.Services.AddCors(options =>
 {

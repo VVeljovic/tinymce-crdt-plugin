@@ -159,5 +159,25 @@ namespace CrdtCore.Tests
             Assert.Null(exception);
         }
 
+        [Fact]
+        public void Delete_ArrivesBeforeItsInsert_AppliesOnceTheElementArrives()
+        {
+            //Arrange
+            var idA = new CrdtId(1, 0);
+            var idB = new CrdtId(1, 1);
+            var doc = new CrdtDocument();
+            doc.Insert(Element(idA, 'A'));
+
+            //Act
+            doc.Delete(idB);
+            doc.Insert(Element(idB, 'B', idA));
+
+            //Assert
+            Assert.Equal("A", doc.GetText());
+
+            var deletedElement = doc.Elements.Single(e => e.CrdtId == idB);
+            Assert.True(deletedElement.IsDeleted);
+        }
+
     }
 }

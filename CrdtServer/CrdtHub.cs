@@ -1,8 +1,9 @@
 using System.Text.Json;
+using CrdtServer.RabbitMQ.Producer;
 using CrdtServer.Services;
 using Microsoft.AspNetCore.SignalR;
 
-public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hub
+public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
 {
     private static readonly JsonSerializerOptions OfflineOperationJsonOptions = new()
     {
@@ -28,7 +29,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = publisher.PublishInsertAsync(crdtElement, docId);
+        _ = producer.SendOperation("Insert", docId, crdtElement);
     }
 
     public async Task Delete(CrdtCore.CrdtId crdtId, string docId)
@@ -40,7 +41,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
-        _ = publisher.PublishDeleteAsync(crdtId, docId);
+        _ = producer.SendOperation("Delete", docId, crdtId);
     }
 
     public async Task ApplyFormatting(CrdtCore.CrdtFormatting formatting, string docId)
@@ -52,7 +53,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
 
         await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings);
 
-        _ = publisher.PublishFormatAsync(formatting, docId);
+        _ = producer.SendOperation("Formatting", docId, formatting);
     }
 
     public async Task ApplyOfflineOperations(List<CrdtCore.OfflineOperations> operations, string docId)
@@ -68,7 +69,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
                     if (insertElement != null)
                     {
                         document.Insert(insertElement);
-                        _ = publisher.PublishInsertAsync(insertElement, docId);
+                        _ = producer.SendOperation("Insert", docId, insertElement);
                     }
                     break;
                 case "Delete":
@@ -76,7 +77,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
                     if (deleteId != null)
                     {
                         document.Delete(deleteId);
-                        _ = publisher.PublishDeleteAsync(deleteId, docId);
+                        _ = producer.SendOperation("Delete", docId, deleteId);
                     }
                     break;
                 case "Formatting":
@@ -84,7 +85,7 @@ public class CrdtHub(CrdtDocumentStore store, OperationPublisher publisher) : Hu
                     if (formatting != null)
                     {
                         document.ApplyFormatting(formatting);
-                        _ = publisher.PublishFormatAsync(formatting, docId);
+                        _ = producer.SendOperation("Formatting", docId, formatting);
                     }
                     break;
             }

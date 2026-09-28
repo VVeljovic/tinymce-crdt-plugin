@@ -7,6 +7,7 @@
         public List<CrdtFormatting> Formattings { get; set; } = [];
 
         private readonly List<CrdtElement> _pendingElements = [];
+        private readonly List<CrdtId> _pendingDeletes = [];
 
         public CrdtDocument() { }
 
@@ -42,20 +43,30 @@
 
         private void ApplyPendingOperations()
         {
-            bool anyInserted;
+            bool anyChanged;
             do
             {
-                anyInserted = false;
+                anyChanged = false;
+
                 for (int i = _pendingElements.Count - 1; i >= 0; i--)
                 {
                     var pendingElement = _pendingElements[i];
                     if (TryInsertElementInOrder(pendingElement))
                     {
                         _pendingElements.RemoveAt(i);
-                        anyInserted = true;
+                        anyChanged = true;
                     }
                 }
-            } while (anyInserted);
+
+                for (int i = _pendingDeletes.Count - 1; i >= 0; i--)
+                {
+                    if (TryDeleteElement(_pendingDeletes[i]))
+                    {
+                        _pendingDeletes.RemoveAt(i);
+                        anyChanged = true;
+                    }
+                }
+            } while (anyChanged);
         }
 
         private bool TryInsertElementInOrder(CrdtElement newElement)
@@ -102,12 +113,27 @@
 
             if (elementToDelete == null)
             {
+                _pendingDeletes.Add(targetId);
                 return null;
             }
 
             elementToDelete.IsDeleted = true;
 
             return elementToDelete;
+        }
+
+        private bool TryDeleteElement(CrdtId targetId)
+        {
+            var elementToDelete = Elements.FirstOrDefault(e => e.CrdtId == targetId);
+
+            if (elementToDelete == null)
+            {
+                return false;
+            }
+
+            elementToDelete.IsDeleted = true;
+
+            return true;
         }
 
         public CrdtFormatting ApplyFormatting(CrdtFormatting formatting)
