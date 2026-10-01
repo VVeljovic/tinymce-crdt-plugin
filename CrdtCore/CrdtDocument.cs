@@ -71,7 +71,7 @@
 
         private bool TryInsertElementInOrder(CrdtElement newElement)
         {
-            if(newElement.PredecessorId != null && FindElementIndexById(newElement.PredecessorId) == -1)
+            if (newElement.PredecessorId != null && FindElementIndexById(newElement.PredecessorId) == -1)
             {
                 return false;
             }
@@ -140,6 +140,81 @@
         {
             Formattings.Add(formatting);
             return formatting;
+        }
+
+        public List<ResolvedFormatting> ResolveFormatting()
+        {
+            var resolvedFormattings = new List<ResolvedFormatting>();
+
+            for (int position = 0; position < Elements.Count; position++)
+            {
+                var element = Elements[position];
+
+                if (element.IsDeleted)
+                {
+                    continue;
+                }
+
+                var attributes = ResolveAttributesAt(position);
+
+                if (attributes.Count > 0)
+                {
+                    resolvedFormattings.Add(new ResolvedFormatting(element.CrdtId, attributes));
+                }
+
+            }
+            return resolvedFormattings;
+        }
+
+        private Dictionary<string, string> ResolveAttributesAt(int position)
+        {
+            var winnerPerAttribute = new Dictionary<string, CrdtFormatting>();
+            foreach (var formatting in GetFormattingsAtPosition(position))
+            {
+                foreach (var attribute in formatting.Attributes.Keys)
+                {
+                    if (!winnerPerAttribute.TryGetValue(attribute, out var currentWinner) ||
+                        formatting.FormattingId.CompareTo(currentWinner.FormattingId) > 0)
+                    {
+                        winnerPerAttribute[attribute] = formatting;
+                    }
+                }
+            }
+            return winnerPerAttribute.ToDictionary(
+                winner => winner.Key,
+                winner => winner.Value.Attributes[winner.Key]);
+        }
+
+        private IEnumerable<CrdtFormatting> GetFormattingsAtPosition(int position)
+        {
+            return Formattings.Where(f => IsPositionInFormattingRange(f, position));
+        }
+
+        private bool IsPositionInFormattingRange(CrdtFormatting formatting, int position)
+        {
+            var startPosition = ResolveAnchorPosition(formatting.Start);
+            var endPosition = ResolveAnchorPosition(formatting.End);
+            if (startPosition == null || endPosition == null)
+            {
+                return false;
+            }
+            return position >= startPosition && position < endPosition;
+        }
+
+        private int? ResolveAnchorPosition(CrdtAnchor anchor)
+        {
+            if (anchor.Id is null)
+            {
+                return anchor.Type == AnchorType.Before ? 0 : Elements.Count;
+            }
+
+            var index = FindElementIndexById(anchor.Id);
+            if (index == -1)
+            {
+                return null;
+            }
+
+            return anchor.Type == AnchorType.Before ? index : index + 1;
         }
 
         public string GetText() => string.Join("", Elements.Where(x => !x.IsDeleted).Select(x => x.Value));

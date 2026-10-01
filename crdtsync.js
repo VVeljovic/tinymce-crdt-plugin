@@ -12,6 +12,10 @@ function findVisibleElementAt(elements, visibleIndex) {
   return null;
 }
 
+function idKey(id) {
+  return `${id.nodeId}:${id.counter}`;
+}
+
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -44,7 +48,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   const myNodeId = getOrCreateNodeId();
   let myCounter = 0;
   let localElements = [];
-  let localFormattings = [];
+  let resolvedAttributes = new Map();
   let pendingAttributes = {};
 
   const OFFLINE_QUEUE_KEY = `crdtsync_offline_queue_${docId}`;
@@ -295,78 +299,15 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
 
   //  RENDERING
 
-  function resolveAnchorToVisibleIndex(anchor) {
-    if (anchor.id === null) {
-      return anchor.type === ANCHOR_TYPE.Before
-        ? 0
-        : getVisibleElements().length;
-    }
-
-    const idx = localElements.findIndex((e) => idsEqual(e.crdtId, anchor.id));
-    if (idx === -1) {
-      return null;
-    }
-
-    let visibleBefore = 0;
-    for (let i = 0; i < idx; i++) {
-      if (!localElements[i].isDeleted) {
-        visibleBefore++;
-      }
-    }
-    const el = localElements[idx];
-    if (anchor.type === ANCHOR_TYPE.Before) return visibleBefore;
-
-    return visibleBefore + (el.isDeleted ? 0 : 1);
+  // formatting conflicts are resolved on the server (CrdtDocument.ResolveFormatting)
+  function setResolvedFormatting(resolved) {
+    resolvedAttributes = new Map(
+      (resolved ?? []).map((r) => [idKey(r.elementId), r.attributes]),
+    );
   }
 
-  function resolveFormattingRanges() {
-    const ranges = [];
-    for (const formatting of localFormattings) {
-      const start = resolveAnchorToVisibleIndex(formatting.start);
-      const end = resolveAnchorToVisibleIndex(formatting.end);
-
-      if (start === null || end === null || start >= end) continue;
-
-      ranges.push({
-        start,
-        end,
-        attributes: formatting.attributes,
-        formattingId: formatting.formattingId,
-      });
-    }
-
-    return ranges;
-  }
-
-  function activeAttributesAt(ranges, i) {
-    const winners = {};
-
-    for (const range of ranges) {
-      if (i < range.start || i >= range.end) continue;
-
-      for (const key of Object.keys(range.attributes)) {
-        const current = winners[key];
-
-        const isNewer =
-          !current ||
-          range.formattingId.counter > current.formattingId.counter ||
-          (range.formattingId.counter === current.formattingId.counter &&
-            range.formattingId.nodeId > current.formattingId.nodeId);
-
-        if (isNewer) {
-          winners[key] = {
-            formattingId: range.formattingId,
-            value: range.attributes[key],
-          };
-        }
-      }
-    }
-
-    const active = {};
-    for (const key of Object.keys(winners)) {
-      active[key] = winners[key].value;
-    }
-    return active;
+  function attributesOf(element) {
+    return (element && resolvedAttributes.get(idKey(element.crdtId))) || {};
   }
 
   function buildTagsFor(active) {
@@ -395,8 +336,6 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
   }
 
   function renderFormattedHtml(visibleElements) {
-    const ranges = resolveFormattingRanges();
-
     let html = "";
     let paragraphOpen = false;
     let openActiveKey = null;
@@ -423,7 +362,7 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
         openCloseHtml = "";
       }
 
-      const active = activeAttributesAt(ranges, i);
+      const active = attributesOf(el);
       const activeKey = JSON.stringify(active);
 
       if (activeKey !== openActiveKey) {
@@ -482,20 +421,26 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       });
     });
 
-    connection.on("ElementsChanged", (elements) => {
+    connection.on("ElementsChanged", (elements, resolved) => {
       myCounter = buildLamportCounter(elements.map((e) => e.crdtId));
       localElements = elements;
+      setResolvedFormatting(resolved);
       isApplyingRemoteChange = true;
       editor.setContent(renderHtml());
       isApplyingRemoteChange = false;
     });
 
-    connection.on("FormattingsChanged", (formattings) => {
+    connection.on("FormattingsChanged", (formattings, resolved) => {
       myCounter = buildLamportCounter(formattings.map((f) => f.formattingId));
-      localFormattings = formattings;
+      setResolvedFormatting(resolved);
       isApplyingRemoteChange = true;
       editor.setContent(renderHtml());
       isApplyingRemoteChange = false;
+    });
+
+    // own operations are not re-rendered, only the resolved formatting is refreshed
+    connection.on("FormattingResolved", (resolved) => {
+      setResolvedFormatting(resolved);
     });
 
     connection
@@ -537,9 +482,8 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       });
     }
 
-    const ranges = resolveFormattingRanges();
     const inheritedAttributes = {
-      ...activeAttributesAt(ranges, start - 1),
+      ...attributesOf(findVisibleElementAt(localElements, start - 1)),
       ...pendingAttributes,
     };
 
@@ -580,7 +524,6 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
         attributes: inheritedAttributes,
       };
 
-      localFormattings.push(formatting);
       sendOrQueue({ type: "Formatting", data: formatting });
     }
 
@@ -620,7 +563,6 @@ tinymce.PluginManager.add("crdtsync", function (editor) {
       end: endAnchor,
       attributes,
     };
-    localFormattings.push(formatting);
     sendOrQueue({ type: "Formatting", data: formatting });
   });
 
