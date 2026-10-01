@@ -16,10 +16,8 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
 
         var document = await store.GetOrCreate(docId);
 
-        var resolved = document.ResolveFormatting();
-
-        await Clients.Caller.SendAsync("ElementsChanged", document.Elements, resolved);
-        await Clients.Caller.SendAsync("FormattingsChanged", document.Formattings, resolved);
+        await Clients.Caller.SendAsync("ElementsChanged", document.Elements);
+        await Clients.Caller.SendAsync("FormattingsChanged", document.Formattings);
     }
 
     public async Task Insert(CrdtCore.CrdtElement crdtElement, string docId)
@@ -29,10 +27,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         document.Insert(crdtElement);
         await store.Save(docId, document);
 
-        var resolved = document.ResolveFormatting();
-
-        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements, resolved);
-        await Clients.Caller.SendAsync("FormattingResolved", resolved);
+        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
         await producer.SendOperation("Insert", docId, crdtElement);
     }
@@ -44,10 +39,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         document.Delete(crdtId);
         await store.Save(docId, document);
 
-        var resolved = document.ResolveFormatting();
-
-        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements, resolved);
-        await Clients.Caller.SendAsync("FormattingResolved", resolved);
+        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("ElementsChanged", document.Elements);
 
         await producer.SendOperation("Delete", docId, crdtId);
     }
@@ -59,10 +51,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
         document.ApplyFormatting(formatting);
         await store.Save(docId, document);
 
-        var resolved = document.ResolveFormatting();
-
-        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings, resolved);
-        await Clients.Caller.SendAsync("FormattingResolved", resolved);
+        await Clients.GroupExcept(docId, Context.ConnectionId).SendAsync("FormattingsChanged", document.Formattings);
 
         await producer.SendOperation("Formatting", docId, formatting);
     }
@@ -104,9 +93,7 @@ public class CrdtHub(CrdtDocumentStore store, IOperationProducer producer) : Hub
 
         await store.Save(docId, document);
 
-        var resolved = document.ResolveFormatting();
-
-        await Clients.Group(docId).SendAsync("ElementsChanged", document.Elements, resolved);
-        await Clients.Group(docId).SendAsync("FormattingsChanged", document.Formattings, resolved);
+        await Clients.Group(docId).SendAsync("ElementsChanged", document.Elements);
+        await Clients.Group(docId).SendAsync("FormattingsChanged", document.Formattings);
     }
 }

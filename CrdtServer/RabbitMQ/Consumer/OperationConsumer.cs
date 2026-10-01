@@ -56,7 +56,7 @@ namespace CrdtServer.RabbitMQ.Consumer
                     if (element != null)
                     {
                         document.Insert(element);
-                        await hubContext.Clients.Group(envelope.DocId).SendAsync("ElementsChanged", document.Elements, document.ResolveFormatting());
+                        await hubContext.Clients.Group(envelope.DocId).SendAsync("ElementsChanged", document.Elements);
                     }
                     break;
 
@@ -65,7 +65,7 @@ namespace CrdtServer.RabbitMQ.Consumer
                     if (id != null)
                     {
                         document.Delete(id);
-                        await hubContext.Clients.Group(envelope.DocId).SendAsync("ElementsChanged", document.Elements, document.ResolveFormatting());
+                        await hubContext.Clients.Group(envelope.DocId).SendAsync("ElementsChanged", document.Elements);
                     }
                     break;
 
@@ -74,7 +74,7 @@ namespace CrdtServer.RabbitMQ.Consumer
                     if (formatting != null)
                     {
                         document.ApplyFormatting(formatting);
-                        await hubContext.Clients.Group(envelope.DocId).SendAsync("FormattingsChanged", document.Formattings, document.ResolveFormatting());
+                        await hubContext.Clients.Group(envelope.DocId).SendAsync("FormattingsChanged", document.Formattings);
                     }
                     break;
             }
